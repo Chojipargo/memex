@@ -1,13 +1,12 @@
 # memex.ai
 
-A polished authentication experience for **memex.ai** — a dark, glassmorphic sign-in flow over an interactive Three.js stationery scene, backed by Supabase Auth.
+A polished authentication experience for **memex.ai** — a dark, glassmorphic sign-in flow over an original line-art notepad illustration, backed by Supabase Auth.
 
 ## Stack
 
 - **Next.js 16.4** (App Router, Turbopack, Cache Components)
 - **React 19.3** + **TypeScript**
 - **Tailwind CSS v4** (CSS-first tokens in `src/app/globals.css`)
-- **Three.js** via `@react-three/fiber` + `@react-three/drei`
 - **Supabase Auth** via `@supabase/ssr`
 
 ## Getting started
@@ -65,12 +64,10 @@ src/
 │  ├─ sign-in|sign-up|forgot-password|reset-password/
 │  └─ globals.css                # design tokens, glass, fields, buttons, grain
 ├─ components/
+│  ├─ art/
+│  │  ├─ auth-artwork.tsx        # background layering, gradient, grid, drift
+│  │  └─ notepad-pen-sketch.tsx  # original line-art notepad + pen SVG
 │  ├─ auth/                      # shell, cards, fields, social buttons
-│  ├─ three/
-│  │  ├─ auth-scene.tsx          # lazy client boundary + static fallback
-│  │  ├─ scene.tsx               # canvas, camera, damped parallax
-│  │  ├─ desk.tsx                # surface, studio lighting, contact shadows
-│  │  └─ stationery-stack.tsx    # books, sticky notes, clipboard, pencils, apple
 │  └─ ui/                        # icons, spinner
 ├─ lib/
 │  ├─ auth.ts                    # validation, error mapping, safe redirects
@@ -82,8 +79,7 @@ src/
 
 - **Next.js 16 uses `proxy.ts`**, not `middleware.ts`. Session cookies are refreshed there on every matched request.
 - **Cache Components is enabled.** The dashboard reads the session inside a `<Suspense>` boundary so the static shell can prerender.
-- The 3D scene is **entirely procedural** — no GLB models or remote HDR files. Lighting uses drei `Lightformer`s, and the canvas is `pointer-events-none` with window-level pointer tracking, so it never interferes with the form.
-- Parallax respects `prefers-reduced-motion`; rendering drops resolution under load via `PerformanceMonitor`.
+- The backdrop artwork is **original inline SVG** — no stock assets, image requests, or 3D runtime. It is tinted with `currentColor`, layered under the readability scrims, and drifts slowly unless `prefers-reduced-motion` is set.
 - OAuth and password-reset emails require the redirect URLs above to be allowlisted in Supabase.
 
 ## Scripts

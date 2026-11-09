@@ -1,11 +1,11 @@
 import type { ReactNode } from "react";
-import { AuthScene } from "@/components/three/auth-scene";
+import { AuthArtwork } from "@/components/art/auth-artwork";
 import { BrandMark } from "./brand-mark";
 
 export function AuthShell({ children }: { children: ReactNode }) {
   return (
     <main className="relative isolate min-h-dvh overflow-hidden">
-      <AuthScene />
+      <AuthArtwork />
 
       {/* Readability scrims: stronger over the brand column, softer over the card */}
       <div
