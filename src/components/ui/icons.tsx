@@ -139,3 +139,63 @@ export function CheckIcon({ className = "size-[18px]", ...props }: IconProps) {
     </svg>
   );
 }
+
+export function FileTextIcon({ className = "size-[18px]", ...props }: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className={className}
+      {...props}
+    >
+      <path d="M14 3.5H7.5A2.5 2.5 0 0 0 5 6v12a2.5 2.5 0 0 0 2.5 2.5h9A2.5 2.5 0 0 0 19 18V8.5L14 3.5Z" />
+      <path d="M14 3.5V8.5H19" />
+      <path d="M8.5 12.5h7M8.5 16h5" />
+    </svg>
+  );
+}
+
+export function UploadIcon({ className = "size-[18px]", ...props }: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className={className}
+      {...props}
+    >
+      <path d="M12 16V4.5" />
+      <path d="m7.5 9 4.5-4.5L16.5 9" />
+      <path d="M4.5 15.5v2A2.5 2.5 0 0 0 7 20h10a2.5 2.5 0 0 0 2.5-2.5v-2" />
+    </svg>
+  );
+}
+
+export function AlertIcon({ className = "size-[18px]", ...props }: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className={className}
+      {...props}
+    >
+      <path d="M10.3 4.5 2.9 17.2A1.6 1.6 0 0 0 4.3 19.6h15.4a1.6 1.6 0 0 0 1.4-2.4L13.7 4.5a2 2 0 0 0-3.4 0Z" />
+      <path d="M12 9v4.5M12 17h.01" />
+    </svg>
+  );
+}
+

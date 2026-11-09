@@ -114,6 +114,39 @@ input:-webkit-autofill:focus {
   pointer-events: none;
 }
 
+/* -------------------------------------------------------------- workspace */
+
+.workspace-panel {
+  position: relative;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: linear-gradient(
+    180deg,
+    rgba(22, 22, 22, 0.78) 0%,
+    rgba(13, 13, 13, 0.72) 100%
+  );
+  -webkit-backdrop-filter: blur(26px) saturate(130%);
+  backdrop-filter: blur(26px) saturate(130%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 1px 0 rgba(0, 0, 0, 0.35),
+    0 30px 80px -40px rgba(0, 0, 0, 0.95);
+}
+
+.workspace-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0 22% auto 22%;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.28),
+    transparent
+  );
+  pointer-events: none;
+}
+
 /* ------------------------------------------------------------------ fields */
 
 .field-control {
