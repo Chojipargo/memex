@@ -6,7 +6,7 @@
 --
 -- Apply with the Supabase CLI (`supabase db push`) or paste this file into the
 -- SQL editor. The embedding dimension must match EMBEDDING_DIMENSIONS
--- (default 1536 for text-embedding-3-small).
+-- (default 1536 for gemini-embedding-001).
 
 create extension if not exists vector;
 
@@ -41,7 +41,7 @@ create table if not exists public.chunks (
 comment on table public.chunks is
   'Sentence-aware 500-800 token chunks with a 100-token overlap. Page is the majority page of the chunk.';
 comment on column public.chunks.embedding is
-  'OpenAI text-embedding-3-small vector. Keep vector(1536) aligned with EMBEDDING_DIMENSIONS.';
+  'Gemini gemini-embedding-001 vector (L2-normalized). Keep vector(1536) aligned with EMBEDDING_DIMENSIONS.';
 
 create index if not exists chunks_document_idx
   on public.chunks (document_id);

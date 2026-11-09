@@ -11,13 +11,13 @@ A dark, glassmorphic workspace for **memex.ai** — Supabase Auth over an origin
 - **pgvector** for chunk embeddings
 - **unpdf** for server-side PDF text extraction
 - **gpt-tokenizer** (cl100k_base) for exact chunk sizing
-- **OpenAI `text-embedding-3-small`** (1536 dimensions) via `fetch`
+- **Gemini `gemini-embedding-001`** (1536 dimensions) via `fetch`
 
 ## Getting started
 
 ```bash
 npm install
-cp .env.example .env.local   # fill in the anon key and OPENAI_API_KEY
+cp .env.example .env.local   # fill in the anon key and GEMINI_API_KEY
 npm run dev
 ```
 
@@ -28,14 +28,14 @@ Open [http://localhost:3000](http://localhost:3000) — it redirects to `/sign-i
 ```env
 NEXT_PUBLIC_SUPABASE_URL=https://sapiejhntzbhtiumvxty.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon/publishable key>
-OPENAI_API_KEY=<server-only key>
+GEMINI_API_KEY=<server-only key>
 
 # Optional; defaults shown
-# OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+# GEMINI_EMBEDDING_MODEL=gemini-embedding-001
 # EMBEDDING_DIMENSIONS=1536
 ```
 
-The **anon key is public by design**. Never expose the database password, `service_role` key, or `OPENAI_API_KEY` to the browser. If you need direct Postgres access, put the connection string in a server-only variable (see the commented `DATABASE_URL` in `.env.example`).
+The **anon key is public by design**. Never expose the database password, `service_role` key, or `GEMINI_API_KEY` to the browser. If you need direct Postgres access, put the connection string in a server-only variable (see the commented `DATABASE_URL` in `.env.example`).
 
 > Supabase Auth uses the project URL + anon key, not the `postgresql://…` connection string. The connection string is only for direct SQL clients.
 
@@ -70,7 +70,7 @@ The migration:
 - adds an HNSW cosine index and RLS policies scoped through the owning document;
 - creates the private `documents` Storage bucket (25 MB limit, PDF MIME only) and per-user Storage policies.
 
-Then add `OPENAI_API_KEY` to `.env.local` and restart the dev server.
+Then add `GEMINI_API_KEY` to `.env.local` and restart the dev server.
 
 ### Pipeline
 
@@ -79,12 +79,12 @@ Then add `OPENAI_API_KEY` to `.env.local` and restart the dev server.
 1. **Upload** — validates the PDF signature and size, stores the raw file at `<user-id>/<document-id>.pdf` in the private bucket, and inserts the `documents` row.
 2. **Extract** — `unpdf` reads the PDF page by page (`mergePages: false`). Encrypted or text-less PDFs return a 422.
 3. **Chunk** — sentence-aware chunks of 500–800 cl100k_base tokens with a 100-token overlap. Chunks may span pages; each chunk is attributed to the page contributing the most tokens. A final chunk of a short document can be under 500 tokens because there is nothing left to fill it.
-4. **Embed** — chunk text is embedded in batches of 64 with retries for rate limits and transient failures.
+4. **Embed** — chunk text is embedded in batches of 64 with Gemini `gemini-embedding-001` (`RETRIEVAL_DOCUMENT`, 1536 dimensions) and retries for rate limits and transient failures. Vectors are L2-normalized for cosine search.
 5. **Index** — vectors are validated against the configured dimensions and inserted into `chunks` in batches of 100. Embeddings are generated before any chunk rows are written.
 
 The dashboard uploader shows upload progress, then extraction/embedding status; on success it refreshes the recent-documents list.
 
-> If you change `EMBEDDING_DIMENSIONS`, update `vector(1536)` in the migration and re-embed existing documents. The default model (`text-embedding-3-small`) supports 1536 dimensions.
+> If you change `EMBEDDING_DIMENSIONS`, update `vector(1536)` in the migration and re-embed existing documents. `gemini-embedding-001` supports 128–3072 output dimensions; the default here is 1536.
 
 ## Routes
 
@@ -121,7 +121,7 @@ src/
 │  ├─ ingestion/
 │  │  ├─ constants.ts                # limits, bucket, batch sizes, chunk window
 │  │  ├─ chunk.ts                    # sentence-aware 500–800/100 overlap chunker
-│  │  ├─ embeddings.ts               # OpenAI batching, retries, dimension checks
+│  │  ├─ embeddings.ts               # Gemini batching, retries, dimension checks
 │  │  └─ pdf.ts                      # unpdf page-by-page extraction
 │  └─ supabase/{client,server,proxy,config}.ts
 └─ proxy.ts                          # Next 16 Proxy: session refresh + route guards

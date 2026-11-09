@@ -108,7 +108,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error:
-          "OPENAI_API_KEY is not configured. Add it to .env.local to generate embeddings.",
+          "GEMINI_API_KEY is not configured. Add it to .env.local to generate embeddings.",
       },
       { status: 503 },
     );
