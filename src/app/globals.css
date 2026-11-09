@@ -252,19 +252,24 @@ input:-webkit-autofill:focus {
   background-size: 180px 180px;
 }
 
-@keyframes art-float {
-  0%,
-  100% {
-    transform: translateY(-8px);
-  }
-  50% {
-    transform: translateY(10px);
+.flow-lines path {
+  vector-effect: non-scaling-stroke;
+}
+
+@keyframes flow-dash {
+  to {
+    stroke-dashoffset: -2200;
   }
 }
 
-.art-float {
-  animation: art-float 18s ease-in-out infinite;
-  will-change: transform;
+.flow-dash {
+  stroke-dasharray: 160px 1900px;
+  animation: flow-dash 17s linear infinite;
+}
+
+.flow-dash-slow {
+  stroke-dasharray: 120px 2300px;
+  animation: flow-dash 26s linear infinite;
 }
 
 @keyframes rise {
@@ -289,7 +294,8 @@ input:-webkit-autofill:focus {
 @media (prefers-reduced-motion: reduce) {
   .animate-rise,
   .animate-rise-delayed,
-  .art-float {
+  .flow-dash,
+  .flow-dash-slow {
     animation: none;
   }
 }

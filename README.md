@@ -1,6 +1,6 @@
 # memex.ai
 
-A polished authentication experience for **memex.ai** — a dark, glassmorphic sign-in flow over an original line-art notepad illustration, backed by Supabase Auth.
+A polished authentication experience for **memex.ai** — a dark, glassmorphic sign-in flow over an original field of flowing lines, backed by Supabase Auth.
 
 ## Stack
 
@@ -65,8 +65,8 @@ src/
 │  └─ globals.css                # design tokens, glass, fields, buttons, grain
 ├─ components/
 │  ├─ art/
-│  │  ├─ auth-artwork.tsx        # background layering, gradient, grid, drift
-│  │  └─ notepad-pen-sketch.tsx  # original line-art notepad + pen SVG
+│  │  ├─ auth-artwork.tsx        # background layering, gradient, convergence glow
+│  │  └─ flowing-lines.tsx       # original SVG line field that merges to one stroke
 │  ├─ auth/                      # shell, cards, fields, social buttons
 │  └─ ui/                        # icons, spinner
 ├─ lib/
@@ -79,7 +79,7 @@ src/
 
 - **Next.js 16 uses `proxy.ts`**, not `middleware.ts`. Session cookies are refreshed there on every matched request.
 - **Cache Components is enabled.** The dashboard reads the session inside a `<Suspense>` boundary so the static shell can prerender.
-- The backdrop artwork is **original inline SVG** — no stock assets, image requests, or 3D runtime. It is tinted with `currentColor`, layered under the readability scrims, and drifts slowly unless `prefers-reduced-motion` is set.
+- The backdrop artwork is **original inline SVG** — no stock assets, image requests, or 3D runtime. It is tinted with `currentColor`, layered under the readability scrims, and its accent lines drift slowly unless `prefers-reduced-motion` is set.
 - OAuth and password-reset emails require the redirect URLs above to be allowlisted in Supabase.
 
 ## Scripts
