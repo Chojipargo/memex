@@ -35,6 +35,16 @@ export const CONTINUE_MAX_STEPS = 4;
 const DEFAULT_TRAIL_MODEL = "gemini-3.8-flash";
 export const TRAIL_MODEL = normalizeModelName(process.env.GEMINI_TRAIL_MODEL);
 
+/**
+ * Used only after the primary model keeps returning 429/5xx (for example
+ * "This model is currently experiencing high demand"). Set
+ * GEMINI_TRAIL_FALLBACK_MODEL to override, or to "none" to disable.
+ */
+const DEFAULT_TRAIL_FALLBACK_MODEL = "gemini-3.5-flash";
+const TRAIL_FALLBACK_MODEL = readFallbackModel(
+  process.env.GEMINI_TRAIL_FALLBACK_MODEL,
+);
+
 const GEMINI_GENERATE_URL =
   "https://generativelanguage.googleapis.com/v1beta/models";
 const MAX_ATTEMPTS = 3;
@@ -139,6 +149,16 @@ export class TrailGenerationError extends Error {
 
 function normalizeModelName(value: string | undefined): string {
   return value?.trim().replace(/^models\//, "") || DEFAULT_TRAIL_MODEL;
+}
+
+function readFallbackModel(value: string | undefined): string | null {
+  const trimmed = value?.trim().replace(/^models\//, "");
+
+  if (trimmed?.toLowerCase() === "none") {
+    return null;
+  }
+
+  return trimmed || DEFAULT_TRAIL_FALLBACK_MODEL;
 }
 
 function sleep(ms: number) {
@@ -360,7 +380,11 @@ export function validateContinuationResponse(
   );
 }
 
-async function requestGeneration(
+/** Raised when a model stays rate-limited or unavailable after every retry. */
+class ProviderBusyError extends TrailGenerationError {}
+
+async function requestFromModel(
+  model: string,
   prompt: string,
   responseSchema: object,
   apiKey: string,
@@ -372,7 +396,7 @@ async function requestGeneration(
 
     try {
       response = await fetch(
-        `${GEMINI_GENERATE_URL}/${TRAIL_MODEL}:generateContent`,
+        `${GEMINI_GENERATE_URL}/${model}:generateContent`,
         {
           method: "POST",
           headers: {
@@ -428,7 +452,7 @@ async function requestGeneration(
         throw new TrailGenerationError(
           details
             ? `The Gemini trail request failed: ${details}`
-            : `The Gemini trail request failed. Check GEMINI_TRAIL_MODEL (${TRAIL_MODEL}).`,
+            : `The Gemini trail request failed. Check GEMINI_TRAIL_MODEL (${model}).`,
         );
       }
 
@@ -437,7 +461,13 @@ async function requestGeneration(
       );
     }
 
-    lastError = new TrailGenerationError(
+    console.warn(
+      `[trails] ${model} returned ${response.status} (attempt ${attempt}/${MAX_ATTEMPTS})${
+        details ? `: ${details}` : ""
+      }`,
+    );
+
+    lastError = new ProviderBusyError(
       response.status === 429
         ? "The Gemini trail provider is rate-limiting requests. Try again in a moment."
         : "The Gemini trail provider is temporarily unavailable. Try again in a moment.",
@@ -454,6 +484,46 @@ async function requestGeneration(
       "The Gemini trail request failed. Try again in a moment.",
     )
   );
+}
+
+/**
+ * Call the primary trail model; if it stays busy (429/5xx after retries),
+ * try the fallback model once. Returns the model that actually answered.
+ */
+async function requestGeneration(
+  prompt: string,
+  responseSchema: object,
+  apiKey: string,
+): Promise<{ payload: unknown; model: string }> {
+  try {
+    const payload = await requestFromModel(
+      TRAIL_MODEL,
+      prompt,
+      responseSchema,
+      apiKey,
+    );
+    return { payload, model: TRAIL_MODEL };
+  } catch (error) {
+    if (
+      !(error instanceof ProviderBusyError) ||
+      !TRAIL_FALLBACK_MODEL ||
+      TRAIL_FALLBACK_MODEL === TRAIL_MODEL
+    ) {
+      throw error;
+    }
+
+    console.warn(
+      `[trails] ${TRAIL_MODEL} is busy; falling back to ${TRAIL_FALLBACK_MODEL}.`,
+    );
+
+    const payload = await requestFromModel(
+      TRAIL_FALLBACK_MODEL,
+      prompt,
+      responseSchema,
+      apiKey,
+    );
+    return { payload, model: TRAIL_FALLBACK_MODEL };
+  }
 }
 
 function requireApiKey(): string {
@@ -485,7 +555,7 @@ export async function generateTrail(
   let lastDraft: TrailDraft | null = null;
 
   for (let attempt = 1; attempt <= GENERATION_ATTEMPTS; attempt++) {
-    const payload = await requestGeneration(
+    const { payload, model } = await requestGeneration(
       buildPrompt(question, candidates),
       TRAIL_RESPONSE_SCHEMA,
       apiKey,
@@ -516,7 +586,7 @@ export async function generateTrail(
     );
 
     if (draft && draft.steps.length >= TRAIL_MIN_STEPS) {
-      return { ...draft, model: TRAIL_MODEL };
+      return { ...draft, model };
     }
 
     lastDraft = draft;
@@ -570,7 +640,7 @@ export async function continueTrail(
   let lastSteps: TrailStepDraft[] | null = null;
 
   for (let attempt = 1; attempt <= GENERATION_ATTEMPTS; attempt++) {
-    const payload = await requestGeneration(
+    const { payload, model } = await requestGeneration(
       buildContinuePrompt(trail, question, usable),
       CONTINUE_RESPONSE_SCHEMA,
       apiKey,
@@ -601,7 +671,7 @@ export async function continueTrail(
     );
 
     if (steps && steps.length >= CONTINUE_MIN_STEPS) {
-      return { steps, model: TRAIL_MODEL };
+      return { steps, model };
     }
 
     lastSteps = steps;
