@@ -47,13 +47,14 @@ export function TrailDetailDialog({
   onClose: () => void;
   onResume: (trail: Trail) => void;
   onToggleSave: (trail: Trail) => void;
-  onOpenNote: (note: Note) => void;
+  onOpenNote: (note: Note, trailId?: string) => void;
   onBranch: (node: TrailNode) => void;
 }) {
   const isActive = trail?.id === activeTrailId;
   const noteMap = new Map(notes.map((note) => [note.id, note]));
   const reduceMotion = useReducedMotion();
   const nodeRefs = useRef<(HTMLLIElement | null)[]>([]);
+  const noteButtonRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const previousTrailId = useRef<string | null>(null);
   const trailId = trail?.id ?? null;
 
@@ -63,15 +64,20 @@ export function TrailDetailDialog({
       return;
     }
 
-    if (previousTrailId.current !== trailId) {
-      previousTrailId.current = trailId;
-      return;
-    }
+    const changedTrail = previousTrailId.current !== trailId;
+    previousTrailId.current = trailId;
 
-    nodeRefs.current[focusedNodeIndex]?.scrollIntoView({
-      block: "center",
-      behavior: reduceMotion ? "auto" : "smooth",
-    });
+    // Move DOM focus onto the active note as the trail opens or moves. This
+    // removes focus from the background trail card and makes Enter work via
+    // the button's native activation instead of the global fallback handler.
+    noteButtonRefs.current[focusedNodeIndex]?.focus({ preventScroll: true });
+
+    if (!changedTrail) {
+      nodeRefs.current[focusedNodeIndex]?.scrollIntoView({
+        block: "center",
+        behavior: reduceMotion ? "auto" : "smooth",
+      });
+    }
   }, [focusedNodeIndex, reduceMotion, trailId]);
 
   const trailNavigation = trail ? (
@@ -243,9 +249,12 @@ export function TrailDetailDialog({
                       <div className="flex items-start justify-between gap-3">
                         <button
                           type="button"
-                          onClick={() => note && onOpenNote(note)}
+                          ref={(element) => {
+                            noteButtonRefs.current[index] = element;
+                          }}
+                          onClick={() => note && onOpenNote(note, trail.id)}
                           disabled={!note}
-                          className="min-w-0 text-left"
+                          className="min-w-0 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35"
                         >
                           <p className="text-[10px] uppercase tracking-[0.16em] text-neutral-600">
                             {node.relation}
@@ -303,20 +312,38 @@ export function NoteDetailDrawer({
   note,
   notes,
   associations,
+  trail,
+  position,
+  direction,
   onClose,
   onOpenNote,
+  onPreviousNote,
+  onNextNote,
   onTogglePin,
   onBranch,
 }: {
   note: Note | null;
   notes: Note[];
   associations: Association[];
+  trail: Trail | null;
+  position: { current: number; total: number } | null;
+  direction: 1 | -1;
   onClose: () => void;
   onOpenNote: (note: Note) => void;
+  onPreviousNote: () => void;
+  onNextNote: () => void;
   onTogglePin: (note: Note) => void;
   onBranch: (note: Note) => void;
 }) {
   const noteMap = new Map(notes.map((item) => [item.id, item]));
+  const reduceMotion = useReducedMotion();
+  const noteRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (note?.id) {
+      noteRef.current?.focus({ preventScroll: true });
+    }
+  }, [note?.id]);
   const connected = note
     ? associations
         .filter(
@@ -339,7 +366,17 @@ export function NoteDetailDrawer({
   return (
     <DrawerFrame open={note !== null} onClose={onClose} labelledBy="note-title">
       {note ? (
-        <>
+        <motion.div
+          key={note.id}
+          ref={noteRef}
+          tabIndex={-1}
+          initial={
+            reduceMotion ? { opacity: 1, x: 0 } : { opacity: 0, x: direction * 24 }
+          }
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
+          className="flex min-h-0 flex-1 flex-col outline-none"
+        >
           <div className="flex items-start justify-between gap-5 border-b border-white/[0.07] px-5 py-5 sm:px-7 sm:py-6">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
@@ -369,6 +406,67 @@ export function NoteDetailDrawer({
           </div>
 
           <div className="flex-1 overflow-y-auto px-5 py-6 sm:px-7">
+            {trail && position && position.total > 1 ? (
+              <div
+                role="group"
+                aria-label="Note navigation"
+                className="mb-5 overflow-hidden rounded-xl border border-white/[0.07] bg-white/[0.02]"
+              >
+                <div className="flex items-center justify-between gap-2 p-1.5">
+                  <button
+                    type="button"
+                    onClick={onPreviousNote}
+                    aria-label="Previous note in trail"
+                    title="Previous note (← or ↑)"
+                    className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-[10.5px] text-neutral-400 transition hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+                  >
+                    <ArrowLeftIcon className="size-3.5" />
+                    <span className="hidden sm:inline">Previous</span>
+                  </button>
+
+                  <div className="min-w-0 text-center">
+                    <p
+                      aria-live="polite"
+                      className="font-mono text-[8.5px] uppercase tracking-[0.16em] text-neutral-500"
+                    >
+                      Note {position.current} of {position.total}
+                    </p>
+                    <p className="mt-0.5 max-w-[13rem] truncate text-[10.5px] text-neutral-600">
+                      {trail.title}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={onNextNote}
+                    aria-label="Next note in trail"
+                    title="Next note (→ or ↓)"
+                    className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-[10.5px] text-neutral-400 transition hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+                  >
+                    <span className="hidden sm:inline">Next</span>
+                    <ArrowRightIcon className="size-3.5" />
+                  </button>
+                </div>
+                <p className="border-t border-white/[0.055] px-3 py-1.5 text-center text-[10px] text-neutral-600">
+                  Use{" "}
+                  <kbd className="rounded border border-white/[0.09] bg-white/[0.03] px-1 font-mono text-[9px] text-neutral-400">
+                    ←
+                  </kbd>{" "}
+                  <kbd className="rounded border border-white/[0.09] bg-white/[0.03] px-1 font-mono text-[9px] text-neutral-400">
+                    →
+                  </kbd>{" "}
+                  or{" "}
+                  <kbd className="rounded border border-white/[0.09] bg-white/[0.03] px-1 font-mono text-[9px] text-neutral-400">
+                    ↑
+                  </kbd>{" "}
+                  <kbd className="rounded border border-white/[0.09] bg-white/[0.03] px-1 font-mono text-[9px] text-neutral-400">
+                    ↓
+                  </kbd>{" "}
+                  to move through this trail
+                </p>
+              </div>
+            ) : null}
+
             <p className="text-[13.5px] leading-7 text-neutral-300">{note.body}</p>
 
             <div className="mt-8 border-t border-white/[0.07] pt-5">
@@ -449,7 +547,7 @@ export function NoteDetailDrawer({
               Branch from here
             </button>
           </div>
-        </>
+        </motion.div>
       ) : null}
     </DrawerFrame>
   );

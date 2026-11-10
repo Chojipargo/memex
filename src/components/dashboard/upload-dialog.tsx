@@ -3,20 +3,15 @@
 import { type FormEvent, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { PdfUploader } from "@/components/documents/pdf-uploader";
+import { DocumentUploader } from "@/components/documents/document-uploader";
 import { DialogFrame, DialogHeader } from "@/components/dashboard/overlay";
 import { SparkIcon } from "@/components/ui/dashboard-icons";
 import { FileTextIcon, UploadIcon } from "@/components/ui/icons";
 import { Spinner } from "@/components/ui/spinner";
+import type { DocumentCreated } from "@/lib/documents/types";
 import { NOTE_MAX_BYTES, NOTE_MAX_LABEL } from "@/lib/ingestion/constants";
 
-export type NoteCreated = {
-  documentId: string;
-  title: string;
-  content: string;
-  chunks: number;
-  tokens: number;
-};
+export type NoteCreated = DocumentCreated;
 
 type UploadTab = "pdf" | "note";
 
@@ -35,6 +30,7 @@ export function UploadDialog({
   onClose,
   initialTab = "pdf",
   initialDraft,
+  targetTrailId,
   onNoteCreated,
   onNotify,
 }: {
@@ -42,6 +38,7 @@ export function UploadDialog({
   onClose: () => void;
   initialTab?: UploadTab;
   initialDraft?: { title?: string; content?: string } | null;
+  targetTrailId?: string | null;
   onNoteCreated: (note: NoteCreated) => void;
   onNotify: (message: string) => void;
 }) {
@@ -88,6 +85,7 @@ export function UploadDialog({
         content: content.trim(),
         chunks: document.chunks,
         tokens: document.tokens,
+        extraction: "note",
       });
       onNotify("Note embedded in your Memex.");
       onClose();
@@ -99,6 +97,16 @@ export function UploadDialog({
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleDocumentCreated = (document: DocumentCreated) => {
+    onNoteCreated(document);
+    onNotify(
+      document.trailId
+        ? "Document text extracted and added to your active trail."
+        : "Document text extracted and opened in a new trail.",
+    );
+    router.refresh();
   };
 
   const importTextFile = async (file: File | undefined) => {
@@ -145,7 +153,7 @@ export function UploadDialog({
         id="upload-title"
         eyebrow="Add to your Memex"
         title="Bring something into memory"
-        description="Upload a PDF, import a text file, or write a note. Every source is chunked, embedded, and connected to your graph."
+        description="Upload a PDF or image, import a text file, or write a note. Scanned pages are read with OCR, then every source is chunked, embedded, and connected to your graph."
         onClose={onClose}
       />
 
@@ -160,7 +168,7 @@ export function UploadDialog({
           }`}
         >
           <FileTextIcon className="size-4" />
-          Upload PDF
+          Upload document
         </button>
         <button
           type="button"
@@ -179,10 +187,14 @@ export function UploadDialog({
       <div className="p-4 sm:p-6">
         {tab === "pdf" ? (
           <div>
-            <PdfUploader />
+            <DocumentUploader
+              targetTrailId={targetTrailId}
+              onDocumentCreated={handleDocumentCreated}
+            />
             <p className="mt-4 text-[11px] leading-5 text-neutral-600">
-              PDFs are stored privately in Supabase Storage. Text-layer PDFs
-              work best; scans need OCR first.
+              Documents are stored privately in Supabase Storage. Text-layer
+              PDFs are read directly; scanned pages and images are processed
+              with OCR in your browser before anything is embedded.
             </p>
           </div>
         ) : (

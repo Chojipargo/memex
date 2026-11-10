@@ -51,6 +51,7 @@ import {
   type Trail,
   type TrailNode,
 } from "@/lib/dashboard/data";
+import { LOCAL_NOTE_BODY_MAX_CHARS } from "@/lib/ingestion/constants";
 
 type Overlay = "search" | "trails" | "upload" | "support" | null;
 type UploadTab = "pdf" | "note";
@@ -161,6 +162,10 @@ export function DashboardWorkspace({
   const [uploadKey, setUploadKey] = useState(0);
   const [selectedTrailId, setSelectedTrailId] = useState<string | null>(null);
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
+  const [noteTrailId, setNoteTrailId] = useState<string | null>(null);
+  const [noteTransitionDirection, setNoteTransitionDirection] = useState<1 | -1>(
+    1,
+  );
   const [focusedNodeIndex, setFocusedNodeIndex] = useState(0);
   const [trailSequenceIds, setTrailSequenceIds] = useState<string[]>([]);
   const [toast, setToast] = useState<string | null>(null);
@@ -232,6 +237,17 @@ export function DashboardWorkspace({
   const selectedNote = selectedNoteId
     ? (notes.find((note) => note.id === selectedNoteId) ?? null)
     : null;
+  const noteTrail = noteTrailId
+    ? (trails.find((trail) => trail.id === noteTrailId) ?? null)
+    : null;
+  const noteTrailIndex =
+    noteTrail && selectedNote
+      ? noteTrail.nodes.findIndex((node) => node.noteId === selectedNote.id)
+      : -1;
+  const noteTrailPosition =
+    noteTrail && noteTrailIndex >= 0
+      ? { current: noteTrailIndex + 1, total: noteTrail.nodes.length }
+      : null;
 
   const orderedTrails = useMemo(() => {
     return [...trails].sort((left, right) => {
@@ -293,6 +309,7 @@ export function DashboardWorkspace({
         event.preventDefault();
         setSelectedTrailId(null);
         setSelectedNoteId(null);
+        setNoteTrailId(null);
         setOverlay("search");
         return;
       }
@@ -301,6 +318,7 @@ export function DashboardWorkspace({
         setOverlay(null);
         setSelectedTrailId(null);
         setSelectedNoteId(null);
+        setNoteTrailId(null);
       }
     };
 
@@ -311,6 +329,7 @@ export function DashboardWorkspace({
   const openUpload = (tab: UploadTab = "pdf", draft: typeof uploadDraft = null) => {
     setSelectedTrailId(null);
     setSelectedNoteId(null);
+    setNoteTrailId(null);
     setUploadTab(tab);
     setUploadDraft(draft);
     setUploadKey((current) => current + 1);
@@ -321,11 +340,33 @@ export function DashboardWorkspace({
     openUpload("note", draft ?? null);
   };
 
-  const openNote = useCallback((note: Note) => {
-    setOverlay(null);
-    setSelectedTrailId(null);
-    setSelectedNoteId(note.id);
-  }, []);
+  const openNote = useCallback(
+    (note: Note, trailId?: string | null) => {
+      const requestedTrail = trailId
+        ? (trails.find((trail) => trail.id === trailId) ?? null)
+        : null;
+      const requestedContainsNote =
+        requestedTrail?.nodes.some((node) => node.noteId === note.id) ?? false;
+      const contextTrail =
+        (requestedContainsNote ? requestedTrail : null) ??
+        trails.find(
+          (trail) =>
+            trail.id === activeTrailId &&
+            trail.nodes.some((node) => node.noteId === note.id),
+        ) ??
+        trails.find((trail) =>
+          trail.nodes.some((node) => node.noteId === note.id),
+        ) ??
+        null;
+
+      setOverlay(null);
+      setSelectedTrailId(null);
+      setNoteTrailId(contextTrail?.id ?? null);
+      setNoteTransitionDirection(1);
+      setSelectedNoteId(note.id);
+    },
+    [activeTrailId, trails],
+  );
 
   const openNoteById = (noteId: string) => {
     const note = notes.find((item) => item.id === noteId);
@@ -338,6 +379,7 @@ export function DashboardWorkspace({
   const openTrail = (trail: Trail) => {
     setOverlay(null);
     setSelectedNoteId(null);
+    setNoteTrailId(null);
     setTrailSequenceIds(orderedTrails.map((item) => item.id));
     setSelectedTrailId(trail.id);
     setFocusedNodeIndex(0);
@@ -435,9 +477,9 @@ export function DashboardWorkspace({
     const note = notes.find((item) => item.id === focusedNode.noteId);
 
     if (note) {
-      openNote(note);
+      openNote(note, selectedTrail?.id ?? null);
     }
-  }, [focusedNode, notes, openNote]);
+  }, [focusedNode, notes, openNote, selectedTrail?.id]);
 
   useEffect(() => {
     if (!selectedTrail || overlay !== null || selectedNoteId !== null) {
@@ -480,40 +522,175 @@ export function DashboardWorkspace({
     return () => window.removeEventListener("keydown", onTrailKeyDown);
   }, [navigateNode, openFocusedNote, overlay, selectedNoteId, selectedTrail]);
 
+  const navigateNote = useCallback(
+    (direction: 1 | -1) => {
+      if (!noteTrail || noteTrailIndex < 0) {
+        return;
+      }
+
+      const count = noteTrail.nodes.length;
+
+      for (let step = 1; step <= count; step += 1) {
+        const index =
+          (((noteTrailIndex + direction * step) % count) + count) % count;
+        const candidate = notes.find(
+          (note) => note.id === noteTrail.nodes[index].noteId,
+        );
+
+        if (candidate && candidate.id !== selectedNoteId) {
+          setNoteTransitionDirection(direction);
+          setSelectedNoteId(candidate.id);
+          return;
+        }
+      }
+    },
+    [noteTrail, noteTrailIndex, notes, selectedNoteId],
+  );
+
+  useEffect(() => {
+    if (
+      !selectedNote ||
+      !noteTrail ||
+      noteTrailIndex < 0 ||
+      overlay !== null ||
+      selectedTrail !== null
+    ) {
+      return;
+    }
+
+    const onNoteKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.metaKey ||
+        event.ctrlKey ||
+        event.altKey ||
+        event.shiftKey ||
+        event.defaultPrevented
+      ) {
+        return;
+      }
+
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      const isTyping =
+        target?.matches("input, textarea, select, [contenteditable='true']") ??
+        false;
+
+      if (isTyping) {
+        return;
+      }
+
+      if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+        event.preventDefault();
+        navigateNote(1);
+        return;
+      }
+
+      if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+        event.preventDefault();
+        navigateNote(-1);
+      }
+    };
+
+    window.addEventListener("keydown", onNoteKeyDown);
+    return () => window.removeEventListener("keydown", onNoteKeyDown);
+  }, [
+    navigateNote,
+    noteTrail,
+    noteTrailIndex,
+    overlay,
+    selectedNote,
+    selectedTrail,
+  ]);
+
   const handleNoteCreated = (created: NoteCreated) => {
+    const content = created.content.slice(0, LOCAL_NOTE_BODY_MAX_CHARS);
+    const excerptText = content.replace(/\s+/g, " ").trim();
     const excerpt =
-      created.content.replace(/\s+/g, " ").trim().slice(0, 170) +
-      (created.content.length > 170 ? "…" : "");
+      excerptText.slice(0, 170) + (excerptText.length > 170 ? "…" : "");
+    const isDocument = created.extraction !== "note" && Boolean(created.extraction);
+    const pageCount = Math.max(1, created.pageCount ?? 1);
+    const extractionTag =
+      created.extraction === "ocr"
+        ? "OCR"
+        : created.extraction === "text-layer"
+          ? "Text layer"
+          : created.extraction === "mixed"
+            ? "Mixed source"
+            : "New note";
 
     const note: Note = {
       id: created.documentId,
       title: created.title,
       excerpt,
-      body: created.content,
-      tag: "New note",
-      kind: "thought",
+      body: content,
+      tag: isDocument
+        ? `${extractionTag} · ${pageCount} page${pageCount === 1 ? "" : "s"}`
+        : "New note",
+      kind: isDocument ? "source" : "thought",
       updatedAt: "Just now",
       pinned: false,
+      source: created.sourceName,
     };
+
+    const node: TrailNode = {
+      id: `node-${created.documentId}`,
+      noteId: created.documentId,
+      label: created.title,
+      kind: note.kind,
+      relation: isDocument
+        ? created.extraction === "ocr"
+          ? "OCR capture"
+          : "Document source"
+        : "The beginning",
+    };
+
+    const targetTrail = created.trailId
+      ? (trails.find((trail) => trail.id === created.trailId) ?? null)
+      : null;
+
+    setNotes((current) => [
+      note,
+      ...current.filter((item) => item.id !== note.id),
+    ]);
+
+    if (targetTrail) {
+      setTrails((current) =>
+        current.map((trail) => {
+          if (trail.id !== targetTrail.id) {
+            return trail;
+          }
+
+          const alreadyLinked = trail.nodes.some(
+            (trailNode) => trailNode.noteId === note.id,
+          );
+
+          return {
+            ...trail,
+            saved: true,
+            updatedAt: "Just now",
+            nodes: alreadyLinked ? trail.nodes : [...trail.nodes, node],
+          };
+        }),
+      );
+      setActiveTrailId(targetTrail.id);
+      return;
+    }
 
     const trail: Trail = {
       id: `trail-${created.documentId}`,
       title: created.title,
-      description: "A new path, opened from a single thought.",
+      description: isDocument
+        ? "A new path opened from an uploaded source."
+        : "A new path, opened from a single thought.",
       updatedAt: "Just now",
       saved: true,
       nodes: [
         {
-          id: `node-${created.documentId}`,
-          noteId: created.documentId,
-          label: created.title,
-          kind: "thought",
+          ...node,
           relation: "The beginning",
         },
       ],
     };
 
-    setNotes((current) => [note, ...current]);
     setTrails((current) => [trail, ...current]);
     setActiveTrailId(trail.id);
   };
@@ -962,6 +1139,7 @@ export function DashboardWorkspace({
         onClose={() => setOverlay(null)}
         initialTab={uploadTab}
         initialDraft={uploadDraft}
+        targetTrailId={activeTrailId}
         onNoteCreated={handleNoteCreated}
         onNotify={notify}
       />
@@ -993,8 +1171,16 @@ export function DashboardWorkspace({
         note={selectedNote}
         notes={notes}
         associations={seedAssociations}
-        onClose={() => setSelectedNoteId(null)}
+        trail={noteTrail}
+        position={noteTrailPosition}
+        direction={noteTransitionDirection}
+        onClose={() => {
+          setSelectedNoteId(null);
+          setNoteTrailId(null);
+        }}
         onOpenNote={openNote}
+        onPreviousNote={() => navigateNote(-1)}
+        onNextNote={() => navigateNote(1)}
         onTogglePin={togglePin}
         onBranch={branchFromNote}
       />

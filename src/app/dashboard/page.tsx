@@ -126,6 +126,8 @@ async function LibraryContent() {
       {documents.map((document) => {
         const chunkCount = document.chunks?.[0]?.count ?? 0;
         const isNote = document.storage_path.startsWith("notes/");
+        const isImage =
+          !isNote && /\.(png|jpe?g|webp|bmp)$/i.test(document.storage_path);
         const Icon = isNote ? NoteIcon : FileTextIcon;
 
         return (
@@ -138,8 +140,9 @@ async function LibraryContent() {
                 {document.title}
               </p>
               <p className="mt-0.5 truncate text-[9.5px] text-neutral-600">
-                {isNote ? "Note" : "PDF"} · {chunkCount.toLocaleString("en-US")}{" "}
-                chunks · {dateFormatter.format(new Date(document.created_at))}
+                {isNote ? "Note" : isImage ? "Image" : "PDF"} ·{" "}
+                {chunkCount.toLocaleString("en-US")} chunks ·{" "}
+                {dateFormatter.format(new Date(document.created_at))}
               </p>
             </div>
           </li>

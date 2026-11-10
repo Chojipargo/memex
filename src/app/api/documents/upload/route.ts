@@ -2,9 +2,11 @@ import { NextResponse } from "next/server";
 
 import { chunkPages, type SourcePage } from "@/lib/ingestion/chunk";
 import {
+  DOCUMENT_MAX_BYTES,
+  DOCUMENT_MAX_LABEL,
+  DOCUMENT_TEXT_MAX_BYTES,
   EMBEDDING_BATCH_SIZE,
   INSERT_BATCH_SIZE,
-  PDF_MAX_BYTES,
   PDF_MIME,
   STORAGE_BUCKET,
 } from "@/lib/ingestion/constants";
@@ -15,6 +17,11 @@ import {
   embedTexts,
   isEmbeddingConfigured,
 } from "@/lib/ingestion/embeddings";
+import { splitExtractedPages } from "@/lib/documents/pages";
+import type {
+  ExtractionMethod,
+  ExtractionPage,
+} from "@/lib/documents/types";
 import { extractPdfPages } from "@/lib/ingestion/pdf";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
@@ -30,6 +37,24 @@ class IngestError extends Error {
   }
 }
 
+type DocumentFormat = {
+  mime: string;
+  extension: string;
+  kind: "pdf" | "image";
+};
+
+const IMAGE_FORMATS: Record<
+  string,
+  { mime: string; extension: string }
+> = {
+  "image/png": { mime: "image/png", extension: "png" },
+  "image/jpeg": { mime: "image/jpeg", extension: "jpg" },
+  "image/jpg": { mime: "image/jpeg", extension: "jpg" },
+  "image/webp": { mime: "image/webp", extension: "webp" },
+  "image/bmp": { mime: "image/bmp", extension: "bmp" },
+  "image/x-ms-bmp": { mime: "image/bmp", extension: "bmp" },
+};
+
 function errorResponse(error: unknown) {
   if (error instanceof IngestError) {
     return NextResponse.json({ error: error.message }, { status: error.status });
@@ -42,7 +67,7 @@ function errorResponse(error: unknown) {
   console.error("[documents/upload]", error);
 
   return NextResponse.json(
-    { error: "Something went wrong while processing this PDF. Try again." },
+    { error: "Something went wrong while processing this document. Try again." },
     { status: 500 },
   );
 }
@@ -53,7 +78,7 @@ function cleanTitle(value: FormDataEntryValue | null, fileName: string): string 
   }
 
   const fromFileName = fileName
-    .replace(/\.pdf$/i, "")
+    .replace(/\.[^.]+$/, "")
     .replace(/[-_]+/g, " ")
     .trim()
     .slice(0, 200);
@@ -61,11 +86,80 @@ function cleanTitle(value: FormDataEntryValue | null, fileName: string): string 
   return fromFileName || "Untitled document";
 }
 
+function resolveDocumentFormat(
+  fileName: string,
+  mimeType: string,
+): DocumentFormat | null {
+  const lowerName = fileName.toLowerCase();
+  const lowerMime = mimeType.toLowerCase();
+
+  if (lowerMime === PDF_MIME || lowerName.endsWith(".pdf")) {
+    return { mime: PDF_MIME, extension: "pdf", kind: "pdf" };
+  }
+
+  if (IMAGE_FORMATS[lowerMime]) {
+    return { ...IMAGE_FORMATS[lowerMime], kind: "image" };
+  }
+
+  if (lowerName.endsWith(".png")) {
+    return { mime: "image/png", extension: "png", kind: "image" };
+  }
+
+  if (lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg")) {
+    return { mime: "image/jpeg", extension: "jpg", kind: "image" };
+  }
+
+  if (lowerName.endsWith(".webp")) {
+    return { mime: "image/webp", extension: "webp", kind: "image" };
+  }
+
+  if (lowerName.endsWith(".bmp")) {
+    return { mime: "image/bmp", extension: "bmp", kind: "image" };
+  }
+
+  return null;
+}
+
+function hasExpectedHeader(bytes: Uint8Array, format: DocumentFormat) {
+  if (format.kind === "pdf") {
+    const header = new TextDecoder("latin1").decode(bytes.subarray(0, 1024));
+    return header.includes("%PDF-");
+  }
+
+  if (format.mime === "image/png") {
+    const signature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+    return signature.every((value, index) => bytes[index] === value);
+  }
+
+  if (format.mime === "image/jpeg") {
+    return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  }
+
+  if (format.mime === "image/webp") {
+    const header = new TextDecoder("latin1").decode(bytes.subarray(0, 12));
+    return header.startsWith("RIFF") && header.slice(8, 12) === "WEBP";
+  }
+
+  if (format.mime === "image/bmp") {
+    const header = new TextDecoder("latin1").decode(bytes.subarray(0, 2));
+    return header === "BM";
+  }
+
+  return false;
+}
+
 function setupHint(message: string): string | null {
   const lower = message.toLowerCase();
 
   if (lower.includes("bucket not found")) {
-    return "The private PDF bucket is missing. Apply the Supabase migration before uploading.";
+    return "The private documents bucket is missing. Apply the Supabase migration before uploading.";
+  }
+
+  if (
+    lower.includes("mime") &&
+    (lower.includes("invalid") || lower.includes("not allowed") || lower.includes("type"))
+  ) {
+    return "The documents bucket only accepts PDFs. Apply the latest Supabase migration to enable image uploads.";
   }
 
   if (
@@ -81,6 +175,72 @@ function setupHint(message: string): string | null {
   }
 
   return null;
+}
+
+function isMissingMetadataColumn(message: string) {
+  const lower = message.toLowerCase();
+  const metadataColumns = [
+    "mime_type",
+    "page_count",
+    "extracted_text",
+    "extraction_method",
+    "ocr_pages",
+  ];
+
+  return (
+    metadataColumns.some((column) => lower.includes(column)) &&
+    (lower.includes("column") ||
+      lower.includes("schema cache") ||
+      lower.includes("could not find"))
+  );
+}
+
+function parsePageTexts(value: FormDataEntryValue | null): ExtractionPage[] | null {
+  if (typeof value !== "string" || !value.trim()) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+
+    if (!Array.isArray(parsed)) {
+      return null;
+    }
+
+    const pages: ExtractionPage[] = [];
+
+    for (const entry of parsed) {
+      if (!entry || typeof entry !== "object") {
+        continue;
+      }
+
+      const record = entry as { page?: unknown; text?: unknown };
+      const page = Number(record.page);
+      const text = typeof record.text === "string" ? record.text : "";
+
+      if (!Number.isFinite(page) || page < 1 || !text.trim()) {
+        continue;
+      }
+
+      pages.push({
+        page: Math.floor(page),
+        text: text.replace(/\u0000/g, "").trim(),
+        method: "ocr",
+      });
+    }
+
+    pages.sort((left, right) => left.page - right.page);
+
+    return pages.length > 0 ? pages : null;
+  } catch {
+    return null;
+  }
+}
+
+function readExtractionMethod(value: FormDataEntryValue | null): ExtractionMethod | null {
+  return value === "ocr" || value === "text-layer" || value === "mixed"
+    ? value
+    : null;
 }
 
 export async function POST(request: Request) {
@@ -129,29 +289,28 @@ export async function POST(request: Request) {
 
   if (!(file instanceof File)) {
     return NextResponse.json(
-      { error: "Attach a PDF in the `file` field." },
+      { error: "Attach a document in the `file` field." },
       { status: 400 },
     );
   }
 
-  const fileName = file.name.replace(/^.*[\\/]/, "");
-  const looksLikePdf =
-    file.type === PDF_MIME || fileName.toLowerCase().endsWith(".pdf");
+  const fileName = file.name.replace(/^.*[\\/]/, "") || "document";
+  const format = resolveDocumentFormat(fileName, file.type);
 
-  if (!looksLikePdf) {
+  if (!format) {
     return NextResponse.json(
-      { error: "Only PDF files are supported." },
+      { error: "Only PDF, PNG, JPEG, WebP, and BMP files are supported." },
       { status: 415 },
     );
   }
 
   if (file.size === 0) {
-    return NextResponse.json({ error: "The PDF is empty." }, { status: 400 });
+    return NextResponse.json({ error: "The document is empty." }, { status: 400 });
   }
 
-  if (file.size > PDF_MAX_BYTES) {
+  if (file.size > DOCUMENT_MAX_BYTES) {
     return NextResponse.json(
-      { error: "This PDF is larger than the 25 MB limit." },
+      { error: `This document is larger than ${DOCUMENT_MAX_LABEL}.` },
       { status: 413 },
     );
   }
@@ -167,57 +326,210 @@ export async function POST(request: Request) {
     );
   }
 
-  const header = new TextDecoder("latin1").decode(bytes.subarray(0, 1024));
-
-  if (!header.includes("%PDF-")) {
+  if (!hasExpectedHeader(bytes, format)) {
     return NextResponse.json(
-      { error: "This file does not look like a valid PDF." },
+      {
+        error:
+          format.kind === "pdf"
+            ? "This file does not look like a valid PDF."
+            : "This file does not look like a valid image.",
+      },
       { status: 415 },
     );
   }
 
+  let extractedText =
+    typeof formData.get("extractedText") === "string"
+      ? (formData.get("extractedText") as string).trim()
+      : "";
+
+  if (Buffer.byteLength(extractedText, "utf8") > DOCUMENT_TEXT_MAX_BYTES) {
+    return NextResponse.json(
+      { error: "The extracted text is larger than the 5 MB limit." },
+      { status: 413 },
+    );
+  }
+
+  const pageTextsRaw = formData.get("pageTexts");
+
+  if (
+    typeof pageTextsRaw === "string" &&
+    Buffer.byteLength(pageTextsRaw, "utf8") > DOCUMENT_TEXT_MAX_BYTES * 2
+  ) {
+    return NextResponse.json(
+      { error: "The extracted page text is larger than the 5 MB limit." },
+      { status: 413 },
+    );
+  }
+
+  let pages = parsePageTexts(pageTextsRaw) ?? [];
+
+  if (extractedText && pages.length === 0) {
+    pages = splitExtractedPages(extractedText);
+  }
+
+  if (!extractedText && pages.length > 0) {
+    extractedText = pages.map((page) => page.text).join("\n\n");
+  }
+
+  let usedServerPdfExtraction = false;
+
+  if (!extractedText) {
+    if (format.kind !== "pdf") {
+      return NextResponse.json(
+        {
+          error:
+            "No text was extracted from this image. Try a clearer scan or enter the text manually.",
+        },
+        { status: 422 },
+      );
+    }
+
+    try {
+      const serverPages = await extractPdfPages(bytes);
+      pages = serverPages
+        .filter((page) => page.text.length > 0)
+        .map((page) => ({
+          page: page.page,
+          text: page.text,
+          method: "text-layer" as const,
+        }));
+      extractedText = pages.map((page) => page.text).join("\n\n");
+      usedServerPdfExtraction = true;
+    } catch (error) {
+      console.error("[documents/upload] PDF extraction failed", error);
+      return NextResponse.json(
+        {
+          error:
+            "Could not read this PDF. It may be encrypted, password-protected or corrupted.",
+        },
+        { status: 422 },
+      );
+    }
+
+    if (!extractedText) {
+      return NextResponse.json(
+        {
+          error:
+            "No selectable text was found. Scanned PDFs should be uploaded through the OCR document flow.",
+        },
+        { status: 422 },
+      );
+    }
+  }
+
+  if (Buffer.byteLength(extractedText, "utf8") > DOCUMENT_TEXT_MAX_BYTES) {
+    return NextResponse.json(
+      { error: "The extracted text is larger than the 5 MB limit." },
+      { status: 413 },
+    );
+  }
+
+  const textPages = pages.filter((page) => page.text.length > 0);
+
+  if (textPages.length === 0) {
+    return NextResponse.json(
+      { error: "The document did not produce any readable text." },
+      { status: 422 },
+    );
+  }
+
+  const parsedPageCount = Number(formData.get("pageCount"));
+  const maxPage = textPages.reduce(
+    (current, page) => Math.max(current, page.page),
+    0,
+  );
+  const pageCount = Math.min(
+    10_000,
+    Math.max(
+      Number.isFinite(parsedPageCount) ? Math.floor(parsedPageCount) : 0,
+      maxPage,
+      textPages.length,
+      1,
+    ),
+  );
+  const extractionMethod =
+    readExtractionMethod(formData.get("extractionMethod")) ??
+    (usedServerPdfExtraction ? "text-layer" : "ocr");
+  const trailIdRaw = formData.get("trailId");
+  const trailId =
+    typeof trailIdRaw === "string" ? trailIdRaw.trim().slice(0, 200) : "";
+
+  const chunks = chunkPages(textPages as SourcePage[]);
+
+  if (chunks.length === 0) {
+    return NextResponse.json(
+      { error: "The document did not produce any text chunks." },
+      { status: 422 },
+    );
+  }
+
   const documentId = crypto.randomUUID();
-  const storagePath = `${user.id}/${documentId}.pdf`;
+  const storagePath = `${user.id}/${documentId}.${format.extension}`;
   const title = cleanTitle(formData.get("title"), fileName);
   let uploaded = false;
   let created = false;
 
   try {
-    // Step 1: store the raw PDF.
-    // Supabase derives the multipart MIME type from the Blob, so normalize it
-    // when a browser reports an empty or unusual type for a `.pdf` file.
+    // Step 1: store the raw document. Normalize the MIME type because browsers
+    // sometimes report an empty or legacy type for valid files.
     const uploadBody =
-      file.type === PDF_MIME
+      file.type === format.mime
         ? file
-        : new File([file], fileName, { type: PDF_MIME });
+        : new File([file], fileName, { type: format.mime });
 
     const upload = await supabase.storage
       .from(STORAGE_BUCKET)
       .upload(storagePath, uploadBody, {
-        contentType: PDF_MIME,
+        contentType: format.mime,
         cacheControl: "0",
         upsert: false,
       });
 
     if (upload.error) {
       throw new IngestError(
-        setupHint(upload.error.message) ?? "Could not store the PDF. Try again.",
+        setupHint(upload.error.message) ??
+          "Could not store the document. Try again.",
         503,
       );
     }
 
     uploaded = true;
 
-    // Step 1 (continued): create the document record.
-    const insert = await supabase
+    // Step 1 (continued): create the document record with OCR metadata.
+    const metadataInsert = {
+      document_id: documentId,
+      title,
+      storage_path: storagePath,
+      mime_type: format.mime,
+      page_count: pageCount,
+      extracted_text: extractedText,
+      extraction_method: extractionMethod,
+      ocr_pages: pages,
+    };
+
+    let insert = await supabase
       .from("documents")
-      .insert({
-        document_id: documentId,
-        title,
-        storage_path: storagePath,
-      })
+      .insert(metadataInsert)
       .select("document_id")
       .single();
+
+    if (insert.error && isMissingMetadataColumn(insert.error.message)) {
+      console.warn(
+        "[documents/upload] OCR metadata columns are missing; apply the latest migration.",
+        insert.error.message,
+      );
+
+      insert = await supabase
+        .from("documents")
+        .insert({
+          document_id: documentId,
+          title,
+          storage_path: storagePath,
+        })
+        .select("document_id")
+        .single();
+    }
 
     if (insert.error) {
       throw new IngestError(
@@ -228,36 +540,7 @@ export async function POST(request: Request) {
 
     created = true;
 
-    // Step 2: extract text page by page.
-    let pages: SourcePage[];
-
-    try {
-      pages = await extractPdfPages(bytes);
-    } catch (error) {
-      console.error("[documents/upload] PDF extraction failed", error);
-      throw new IngestError(
-        "Could not read this PDF. It may be encrypted, password-protected or corrupted.",
-        422,
-      );
-    }
-
-    const textPages = pages.filter((page) => page.text.length > 0);
-
-    if (textPages.length === 0) {
-      throw new IngestError(
-        "No selectable text was found. Scanned PDFs need OCR before uploading.",
-        422,
-      );
-    }
-
-    // Step 3: chunk with sentence-aware boundaries and a 100-token overlap.
-    const chunks = chunkPages(textPages);
-
-    if (chunks.length === 0) {
-      throw new IngestError("The PDF did not produce any text chunks.", 422);
-    }
-
-    // Step 4: embed in batches of 64.
+    // Step 2: embed in batches of 64.
     const vectors = await embedTexts(chunks.map((chunk) => chunk.text));
 
     if (vectors.length !== chunks.length) {
@@ -266,7 +549,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // Step 5: insert chunks, embedding first, in batches of 100.
+    // Step 3: insert chunks, embedding first, in batches of 100.
     const rows = chunks.map((chunk, index) => ({
       document_id: documentId,
       page: chunk.page,
@@ -280,9 +563,33 @@ export async function POST(request: Request) {
 
       if (result.error) {
         throw new IngestError(
-          setupHint(result.error.message) ?? "Could not store the document chunks.",
+          setupHint(result.error.message) ??
+            "Could not store the document chunks.",
           503,
         );
+      }
+    }
+
+    // Step 4: link the document to the current trail. The app keeps its local
+    // trail immediately; this mirrors the ordered node in Postgres so the same
+    // sequence survives across devices.
+    let trailLinked = false;
+
+    if (trailId) {
+      const { error: linkError } = await supabase.rpc(
+        "append_document_to_trail",
+        {
+          p_trail_id: trailId,
+          p_document_id: documentId,
+          p_relation:
+            extractionMethod === "ocr" ? "OCR source" : "Document source",
+        },
+      );
+
+      if (linkError) {
+        console.error("[documents/upload] trail link failed", linkError);
+      } else {
+        trailLinked = true;
       }
     }
 
@@ -291,19 +598,21 @@ export async function POST(request: Request) {
         document: {
           documentId,
           title,
-          pages: pages.length,
+          pages: pageCount,
           textPages: textPages.length,
           chunks: chunks.length,
           tokens: chunks.reduce((total, chunk) => total + chunk.tokens, 0),
           model: EMBEDDING_MODEL,
           dimensions: EMBEDDING_DIMENSIONS,
           batchSize: EMBEDDING_BATCH_SIZE,
+          extractionMethod,
+          trailLinked,
         },
       },
       { status: 201 },
     );
   } catch (error) {
-    // Roll back the document and the stored PDF so a retry starts clean.
+    // Roll back the document and stored file so a retry starts clean.
     if (created) {
       const { error: deleteError } = await supabase
         .from("documents")
