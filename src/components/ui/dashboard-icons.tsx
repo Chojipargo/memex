@@ -73,6 +73,17 @@ export function ArrowRightIcon({
   );
 }
 
+export function ArrowLeftIcon({
+  className = "size-[18px]",
+  ...props
+}: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className={className} {...props}>
+      <path d="M19.5 12h-15M10.5 6l-6 6 6 6" {...line} />
+    </svg>
+  );
+}
+
 export function PlusIcon({ className = "size-[18px]", ...props }: IconProps) {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" className={className} {...props}>

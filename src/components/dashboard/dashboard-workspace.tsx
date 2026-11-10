@@ -161,6 +161,8 @@ export function DashboardWorkspace({
   const [uploadKey, setUploadKey] = useState(0);
   const [selectedTrailId, setSelectedTrailId] = useState<string | null>(null);
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
+  const [focusedNodeIndex, setFocusedNodeIndex] = useState(0);
+  const [trailSequenceIds, setTrailSequenceIds] = useState<string[]>([]);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<number | null>(null);
 
@@ -230,6 +232,45 @@ export function DashboardWorkspace({
   const selectedNote = selectedNoteId
     ? (notes.find((note) => note.id === selectedNoteId) ?? null)
     : null;
+
+  const orderedTrails = useMemo(() => {
+    return [...trails].sort((left, right) => {
+      const leftActive = left.id === activeTrailId ? 1 : 0;
+      const rightActive = right.id === activeTrailId ? 1 : 0;
+      return rightActive - leftActive;
+    });
+  }, [activeTrailId, trails]);
+
+  const navigationTrails = useMemo(() => {
+    const ids =
+      trailSequenceIds.length > 0
+        ? [...trailSequenceIds]
+        : orderedTrails.map((trail) => trail.id);
+
+    if (selectedTrail && !ids.includes(selectedTrail.id)) {
+      ids.push(selectedTrail.id);
+    }
+
+    return ids
+      .map((id) => trails.find((trail) => trail.id === id))
+      .filter((trail): trail is Trail => Boolean(trail));
+  }, [orderedTrails, selectedTrail, trailSequenceIds, trails]);
+
+  const safeFocusedNodeIndex =
+    selectedTrail && selectedTrail.nodes.length > 0
+      ? Math.min(focusedNodeIndex, selectedTrail.nodes.length - 1)
+      : 0;
+  const selectedTrailPosition = selectedTrail
+    ? Math.max(
+        1,
+        navigationTrails.findIndex((trail) => trail.id === selectedTrail.id) + 1,
+      )
+    : 0;
+  const focusedNode =
+    selectedTrail && selectedTrail.nodes.length > 0
+      ? selectedTrail.nodes[safeFocusedNodeIndex]
+      : null;
+
   const anyOverlay =
     overlay !== null || selectedTrail !== null || selectedNote !== null;
 
@@ -280,11 +321,11 @@ export function DashboardWorkspace({
     openUpload("note", draft ?? null);
   };
 
-  const openNote = (note: Note) => {
+  const openNote = useCallback((note: Note) => {
     setOverlay(null);
     setSelectedTrailId(null);
     setSelectedNoteId(note.id);
-  };
+  }, []);
 
   const openNoteById = (noteId: string) => {
     const note = notes.find((item) => item.id === noteId);
@@ -297,7 +338,9 @@ export function DashboardWorkspace({
   const openTrail = (trail: Trail) => {
     setOverlay(null);
     setSelectedNoteId(null);
+    setTrailSequenceIds(orderedTrails.map((item) => item.id));
     setSelectedTrailId(trail.id);
+    setFocusedNodeIndex(0);
   };
 
   const togglePin = (note: Note) => {
@@ -344,6 +387,99 @@ export function DashboardWorkspace({
     });
   };
 
+  const navigateTrail = useCallback(
+    (direction: 1 | -1) => {
+      if (!selectedTrailId || navigationTrails.length === 0) {
+        return;
+      }
+
+      const currentIndex = navigationTrails.findIndex(
+        (trail) => trail.id === selectedTrailId,
+      );
+
+      if (currentIndex === -1) {
+        return;
+      }
+
+      const nextIndex =
+        (currentIndex + direction + navigationTrails.length) %
+        navigationTrails.length;
+
+      setSelectedTrailId(navigationTrails[nextIndex].id);
+      setFocusedNodeIndex(0);
+    },
+    [navigationTrails, selectedTrailId],
+  );
+
+  const navigateNode = useCallback(
+    (direction: 1 | -1) => {
+      if (!selectedTrail || selectedTrail.nodes.length === 0) {
+        return;
+      }
+
+      setFocusedNodeIndex((current) => {
+        const count = selectedTrail.nodes.length;
+        const normalized = ((current % count) + count) % count;
+
+        return (normalized + direction + count) % count;
+      });
+    },
+    [selectedTrail],
+  );
+
+  const openFocusedNote = useCallback(() => {
+    if (!focusedNode) {
+      return;
+    }
+
+    const note = notes.find((item) => item.id === focusedNode.noteId);
+
+    if (note) {
+      openNote(note);
+    }
+  }, [focusedNode, notes, openNote]);
+
+  useEffect(() => {
+    if (!selectedTrail || overlay !== null || selectedNoteId !== null) {
+      return;
+    }
+
+    const onTrailKeyDown = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) {
+        return;
+      }
+
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      const isTyping =
+        target?.matches("input, textarea, select, [contenteditable='true']") ??
+        false;
+
+      if (
+        !isTyping &&
+        (event.key === "ArrowLeft" || event.key === "ArrowRight")
+      ) {
+        event.preventDefault();
+        navigateNode(event.key === "ArrowRight" ? 1 : -1);
+        return;
+      }
+
+      if (event.key === "Enter") {
+        const isInteractive =
+          target?.closest(
+            "button, a, input, textarea, select, [contenteditable='true']",
+          ) ?? false;
+
+        if (!isInteractive) {
+          event.preventDefault();
+          openFocusedNote();
+        }
+      }
+    };
+
+    window.addEventListener("keydown", onTrailKeyDown);
+    return () => window.removeEventListener("keydown", onTrailKeyDown);
+  }, [navigateNode, openFocusedNote, overlay, selectedNoteId, selectedTrail]);
+
   const handleNoteCreated = (created: NoteCreated) => {
     const excerpt =
       created.content.replace(/\s+/g, " ").trim().slice(0, 170) +
@@ -381,14 +517,6 @@ export function DashboardWorkspace({
     setTrails((current) => [trail, ...current]);
     setActiveTrailId(trail.id);
   };
-
-  const orderedTrails = useMemo(() => {
-    return [...trails].sort((left, right) => {
-      const leftActive = left.id === activeTrailId ? 1 : 0;
-      const rightActive = right.id === activeTrailId ? 1 : 0;
-      return rightActive - leftActive;
-    });
-  }, [activeTrailId, trails]);
 
   const pinnedNotes = useMemo(
     () => notes.filter((note) => note.pinned).slice(0, 4),
@@ -847,6 +975,13 @@ export function DashboardWorkspace({
         trail={selectedTrail}
         notes={notes}
         activeTrailId={activeTrailId}
+        focusedNodeIndex={safeFocusedNodeIndex}
+        trailPosition={{
+          current: selectedTrailPosition,
+          total: navigationTrails.length,
+        }}
+        onPreviousTrail={() => navigateTrail(-1)}
+        onNextTrail={() => navigateTrail(1)}
         onClose={() => setSelectedTrailId(null)}
         onResume={resumeTrail}
         onToggleSave={toggleTrailSave}

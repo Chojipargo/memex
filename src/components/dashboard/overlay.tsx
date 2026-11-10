@@ -52,6 +52,61 @@ export function DialogFrame({
   );
 }
 
+export function CenteredStage({
+  open,
+  onClose,
+  labelledBy,
+  topBar,
+  children,
+  className = "max-w-2xl",
+}: {
+  open: boolean;
+  onClose: () => void;
+  labelledBy: string;
+  topBar?: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <AnimatePresence>
+      {open ? (
+        <motion.div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={labelledBy}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+          className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-black/55 p-4 backdrop-blur-md"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              onClose();
+            }
+          }}
+        >
+          {topBar ? (
+            <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-4">
+              <div className="pointer-events-auto">{topBar}</div>
+            </div>
+          ) : null}
+
+          <motion.div
+            initial={{ opacity: 0, y: 18, scale: 0.985 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 12, scale: 0.99 }}
+            transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+            className={`relative flex max-h-[calc(100dvh-7rem)] w-full flex-col overflow-hidden rounded-[1.6rem] border border-white/[0.1] bg-ink-900/95 shadow-[0_40px_120px_-30px_rgba(0,0,0,1)] backdrop-blur-2xl ${className}`}
+          >
+            <div className="pointer-events-none absolute inset-x-16 top-0 z-10 h-px bg-gradient-to-r from-transparent via-white/25 to-transparent" />
+            {children}
+          </motion.div>
+        </motion.div>
+      ) : null}
+    </AnimatePresence>
+  );
+}
+
 export function DrawerFrame({
   open,
   onClose,
