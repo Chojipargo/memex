@@ -13,9 +13,11 @@ export const EMBEDDING_DIMENSIONS = positiveInteger(
 
 const GEMINI_EMBEDDINGS_URL =
   "https://generativelanguage.googleapis.com/v1beta/models";
-const EMBEDDING_TASK_TYPE = "RETRIEVAL_DOCUMENT";
 const MAX_ATTEMPTS = 3;
 const REQUEST_TIMEOUT_MS = 60_000;
+
+export type EmbeddingTaskType = "RETRIEVAL_DOCUMENT" | "RETRIEVAL_QUERY";
+const DEFAULT_EMBEDDING_TASK_TYPE: EmbeddingTaskType = "RETRIEVAL_DOCUMENT";
 
 export class EmbeddingError extends Error {
   readonly status = 502;
@@ -78,7 +80,11 @@ function normalizeVector(vector: number[]): number[] {
   return vector.map((value) => value / norm);
 }
 
-async function requestBatch(input: string[], apiKey: string): Promise<number[][]> {
+async function requestBatch(
+  input: string[],
+  apiKey: string,
+  taskType: EmbeddingTaskType,
+): Promise<number[][]> {
   let lastError: EmbeddingError | null = null;
 
   // gemini-embedding-2 rejects `taskType`; it expects task instructions in the
@@ -101,7 +107,7 @@ async function requestBatch(input: string[], apiKey: string): Promise<number[][]
             requests: input.map((text) => ({
               model: `models/${EMBEDDING_MODEL}`,
               content: { parts: [{ text }] },
-              ...(supportsTaskType ? { taskType: EMBEDDING_TASK_TYPE } : {}),
+              ...(supportsTaskType ? { taskType } : {}),
               outputDimensionality: EMBEDDING_DIMENSIONS,
             })),
           }),
@@ -199,7 +205,10 @@ async function requestBatch(input: string[], apiKey: string): Promise<number[][]
  * Embed chunk text with Gemini in batches of up to 64. Returns vectors in the
  * same order as the input so callers can zip them back onto their chunks.
  */
-export async function embedTexts(texts: string[]): Promise<number[][]> {
+export async function embedTexts(
+  texts: string[],
+  taskType: EmbeddingTaskType = DEFAULT_EMBEDDING_TASK_TYPE,
+): Promise<number[][]> {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
 
   if (!apiKey) {
@@ -212,7 +221,7 @@ export async function embedTexts(texts: string[]): Promise<number[][]> {
 
   for (let start = 0; start < texts.length; start += EMBEDDING_BATCH_SIZE) {
     const batch = texts.slice(start, start + EMBEDDING_BATCH_SIZE);
-    const batchVectors = await requestBatch(batch, apiKey);
+    const batchVectors = await requestBatch(batch, apiKey, taskType);
     vectors.push(...batchVectors);
   }
 

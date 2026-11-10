@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 
+import { ContinueTrail } from "@/components/dashboard/continue-trail";
 import { CenteredStage, DrawerFrame } from "@/components/dashboard/overlay";
 import {
   ArrowLeftIcon,
@@ -15,6 +16,8 @@ import {
   TrailsIcon,
 } from "@/components/ui/dashboard-icons";
 import type { Association, Note, Trail, TrailNode } from "@/lib/dashboard/data";
+import type { TrailApi } from "@/lib/trails/api";
+import { apiTrailIdOf } from "@/lib/trails/to-workspace";
 
 function kindLabel(kind: Note["kind"]) {
   if (kind === "quote") return "Quotation";
@@ -36,6 +39,8 @@ export function TrailDetailDialog({
   onToggleSave,
   onOpenNote,
   onBranch,
+  onTrailContinued,
+  onUploadSource,
 }: {
   trail: Trail | null;
   notes: Note[];
@@ -49,8 +54,18 @@ export function TrailDetailDialog({
   onToggleSave: (trail: Trail) => void;
   onOpenNote: (note: Note, trailId?: string) => void;
   onBranch: (node: TrailNode) => void;
+  onTrailContinued: (trail: TrailApi) => void;
+  onUploadSource: () => void;
 }) {
   const isActive = trail?.id === activeTrailId;
+  const apiTrailId = trail ? apiTrailIdOf(trail) : null;
+  // Index of the first step added by the latest continuation, so only the
+  // new nodes animate in.
+  const [appended, setAppended] = useState<{ trailId: string; from: number } | null>(
+    null,
+  );
+  const appendedFrom =
+    trail && appended?.trailId === trail.id ? appended.from : Number.POSITIVE_INFINITY;
   const noteMap = new Map(notes.map((note) => [note.id, note]));
   const reduceMotion = useReducedMotion();
   const nodeRefs = useRef<(HTMLLIElement | null)[]>([]);
@@ -212,12 +227,26 @@ export function TrailDetailDialog({
               {trail.nodes.map((node, index) => {
                 const note = noteMap.get(node.noteId);
                 const isFocused = index === focusedNodeIndex;
+                const isNew = index >= appendedFrom;
 
                 return (
-                  <li
+                  <motion.li
                     key={node.id}
                     ref={(element) => {
                       nodeRefs.current[index] = element;
+                    }}
+                    initial={
+                      isNew
+                        ? reduceMotion
+                          ? { opacity: 0 }
+                          : { opacity: 0, y: 14 }
+                        : false
+                    }
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{
+                      delay: isNew ? 0.08 * (index - appendedFrom) : 0,
+                      duration: 0.5,
+                      ease: [0.16, 1, 0.3, 1],
                     }}
                     className="relative flex gap-3.5"
                   >
@@ -279,10 +308,22 @@ export function TrailDetailDialog({
                         </button>
                       </div>
                     </div>
-                  </li>
+                  </motion.li>
                 );
               })}
             </ol>
+
+            {apiTrailId ? (
+              <ContinueTrail
+                key={trail.id}
+                apiTrailId={apiTrailId}
+                onUploadSource={onUploadSource}
+                onContinued={(updated) => {
+                  setAppended({ trailId: trail.id, from: trail.nodes.length });
+                  onTrailContinued(updated);
+                }}
+              />
+            ) : null}
           </div>
 
           <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-white/[0.07] px-5 py-4 sm:px-7">

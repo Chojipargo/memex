@@ -441,10 +441,9 @@ export const heroPhrases = [
 ];
 
 export const promptSuggestions = [
-  "Trace Bush's memex",
-  "Link today's notes",
-  "Summarize my library",
-  "Start a new trail",
+  "What are the key ideas in my library?",
+  "Where do my sources disagree?",
+  "What should I read next?",
 ];
 
 export function noteById(notes: Note[], id: string) {
