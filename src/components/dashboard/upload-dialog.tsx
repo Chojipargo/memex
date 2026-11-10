@@ -104,7 +104,7 @@ export function UploadDialog({
     onNotify(
       document.trailId
         ? "Document text extracted and added to your active trail."
-        : "Document text extracted and opened in a new trail.",
+        : "Document indexed. Ask a question about it to build a trail.",
     );
     router.refresh();
   };

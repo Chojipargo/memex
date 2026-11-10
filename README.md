@@ -11,7 +11,7 @@ A dark, glassmorphic workspace for **memex.ai** — Supabase Auth over an origin
 - **pgvector** for chunk embeddings
 - **unpdf** for server-side PDF text extraction
 - **gpt-tokenizer** (cl100k_base) for exact chunk sizing
-- **Gemini `gemini-embedding-001`** (1536 dimensions) via `fetch`
+- **Gemini `gemini-embedding-001`** (1536 dimensions) and **`gemini-3.8-flash`** trail generation via `fetch`
 
 ## Getting started
 
@@ -33,6 +33,7 @@ GEMINI_API_KEY=<server-only key>
 # Optional; defaults shown
 # GEMINI_EMBEDDING_MODEL=gemini-embedding-001
 # EMBEDDING_DIMENSIONS=1536
+# GEMINI_TRAIL_MODEL=gemini-3.8-flash
 ```
 
 The **anon key is public by design**. Never expose the database password, `service_role` key, or `GEMINI_API_KEY` to the browser. If you need direct Postgres access, put the connection string in a server-only variable (see the commented `DATABASE_URL` in `.env.example`).
@@ -86,6 +87,38 @@ The dashboard uploader shows upload progress, then extraction/embedding status; 
 
 > If you change `EMBEDDING_DIMENSIONS`, update `vector(1536)` in the migration and re-embed existing documents. `gemini-embedding-001` supports 128–3072 output dimensions; the default here is 1536.
 
+## Trail generation
+
+Apply the generated-trails migration after the ingestion migrations:
+
+```bash
+supabase db push
+```
+
+`supabase/migrations/20261109170000_generated_trails.sql` creates:
+
+- `trails` (`question`, `title`, `model`, owner-scoped `user_id`) and `trail_steps` (ordered citations into `chunks`, with a deferrable position constraint);
+- RLS policies and explicit authenticated grants on both tables;
+- `match_chunks(...)`, an owner-scoped top-30 cosine search with `hnsw.ef_search = 200`;
+- `create_generated_trail(...)`, which verifies every cited chunk belongs to the caller and inserts the trail and steps atomically.
+
+`POST /api/trails` accepts `{ "question": "..." }` and runs this pipeline:
+
+1. **Embed the question** with Gemini `RETRIEVAL_QUERY` (the ingestion pipeline continues to use `RETRIEVAL_DOCUMENT`).
+2. **Retrieve** the top 30 chunks from the user's own documents through `match_chunks`.
+3. **Check coverage** — if there are no chunks, or the best cosine similarity is below `TRAIL_COVERAGE_THRESHOLD` (`0.45` in `src/lib/trails/generate.ts`), return a 422 without calling the LLM.
+4. **Generate** 5–8 ordered steps with `generateContent`, structured JSON output, a low temperature, and retries on rate limits or transient failures. The model sees only candidate chunk ids and is told to treat passage text as untrusted data.
+5. **Validate** the JSON server-side: unknown chunk ids and duplicates are dropped, notes are trimmed to 280 characters, and a response with fewer than 3 usable steps is retried once before returning a 502.
+6. **Save atomically** through `create_generated_trail`, then return the full trail with each step's document title, page, note, and excerpt.
+
+Generated trails are separate from the document-level `trail_nodes` used by hand-built workspace trails. A generated trail may cite several chunks from the same document.
+
+### Continuing a trail
+
+`supabase/migrations/20261110090000_append_trail_steps.sql` adds `append_generated_trail_steps(p_trail_id, p_steps)`. It is a security-invoker function that checks the caller owns the trail and every cited chunk, rejects passages already on the trail, takes a transaction-scoped advisory lock on the trail, and appends steps at `max(position) + n`. It returns the new step count.
+
+`POST /api/trails/[id]/continue` accepts `{ "question": "..." }` (3–500 characters). It embeds the follow-up together with the last step's note and excerpt, retrieves about 30 candidates that are not already on the trail, applies the same coverage check, asks Gemini for 2–4 new steps whose first note bridges from the current last step, and returns the full updated trail.
+
 ## Routes
 
 | Route | Purpose |
@@ -97,6 +130,10 @@ The dashboard uploader shows upload progress, then extraction/embedding status; 
 | `/reset-password` | Sets a new password from the recovery link |
 | `/dashboard` | Protected workspace: PDF uploader, pipeline summary, recent documents |
 | `POST /api/documents/upload` | Auth-checked ingestion pipeline |
+| `POST /api/trails` | Build and save an ordered trail from a question |
+| `GET /api/trails` | List the 50 most recent generated trails |
+| `GET /api/trails/[id]` | Fetch one generated trail with its cited passages |
+| `POST /api/trails/[id]/continue` | Append 2–4 follow-up steps to a generated trail |
 | `/auth/callback` | OAuth / recovery code exchange |
 
 ## Structure
@@ -104,7 +141,9 @@ The dashboard uploader shows upload progress, then extraction/embedding status; 
 ```
 src/
 ├─ app/
-│  ├─ api/documents/upload/route.ts  # upload → extract → chunk → embed → insert
+│  ├─ api/
+│  │  ├─ documents/{upload,note}/route.ts  # ingest, chunk, embed, insert
+│  │  └─ trails/route.ts, trails/[id]/route.ts  # generate, list, fetch trails
 │  ├─ auth/callback/route.ts         # exchangeCodeForSession + safe redirect
 │  ├─ dashboard/                     # workspace UI + signOut action
 │  ├─ sign-in|sign-up|forgot-password|reset-password/
@@ -114,6 +153,7 @@ src/
 │  │  ├─ auth-artwork.tsx            # backdrop layering, gradient, convergence glow
 │  │  └─ flowing-lines.tsx           # SVG line field that merges to one stroke
 │  ├─ auth/                          # shell, cards, fields, social buttons
+│  ├─ dashboard/                     # workspace, command palette, trail overlays
 │  ├─ documents/pdf-uploader.tsx     # drag & drop, progress, status states
 │  └─ ui/                            # icons, spinner
 ├─ lib/
@@ -123,9 +163,12 @@ src/
 │  │  ├─ chunk.ts                    # sentence-aware 500–800/100 overlap chunker
 │  │  ├─ embeddings.ts               # Gemini batching, retries, dimension checks
 │  │  └─ pdf.ts                      # unpdf page-by-page extraction
+│  ├─ trails/
+│  │  ├─ api.ts                      # API response types + runtime parsing
+│  │  └─ generate.ts                 # prompt, structured output, retries, validation
 │  └─ supabase/{client,server,proxy,config}.ts
 └─ proxy.ts                          # Next 16 Proxy: session refresh + route guards
-supabase/migrations/                 # pgvector tables, RLS, Storage bucket
+supabase/migrations/                 # pgvector, RLS, trail tables/functions, Storage
 ```
 
 ## Notes

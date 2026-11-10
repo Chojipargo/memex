@@ -9,7 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 
 import { signOut } from "@/app/dashboard/actions";
 import { BrandMark } from "@/components/auth/brand-mark";
@@ -18,7 +18,12 @@ import {
   NoteDetailDrawer,
   TrailDetailDialog,
 } from "@/components/dashboard/detail-overlays";
-import { DashboardHero } from "@/components/dashboard/hero";
+import {
+  DashboardHero,
+  DEFAULT_HERO_PLACEHOLDER,
+} from "@/components/dashboard/hero";
+import { Onboarding } from "@/components/dashboard/onboarding";
+import { ReadyCard, type ReadySource } from "@/components/dashboard/ready-card";
 import { SupportDialog } from "@/components/dashboard/support-dialog";
 import { TrailsDrawer } from "@/components/dashboard/trails-drawer";
 import {
@@ -44,25 +49,30 @@ import { UploadIcon } from "@/components/ui/icons";
 import {
   mapEdges,
   mapNodes,
-  seedAssociations,
-  seedNotes,
-  seedTrails,
+  type Association,
   type Note,
   type Trail,
   type TrailNode,
 } from "@/lib/dashboard/data";
+import {
+  readStoredWorkspace,
+  WORKSPACE_STORAGE_KEY,
+} from "@/lib/dashboard/storage";
 import { LOCAL_NOTE_BODY_MAX_CHARS } from "@/lib/ingestion/constants";
+import { postTrailQuestion, type TrailApi } from "@/lib/trails/api";
+import {
+  apiTrailIdOf,
+  generatedTrailId,
+  mergeNotes,
+  trailToWorkspace,
+  upsertTrail,
+} from "@/lib/trails/to-workspace";
 
 type Overlay = "search" | "trails" | "upload" | "support" | null;
 type UploadTab = "pdf" | "note";
 
-const STORAGE_KEY = "memex.workspace.v1";
-
-type StoredWorkspace = {
-  notes?: Note[];
-  trails?: Trail[];
-  activeTrailId?: string | null;
-};
+/** Associations are not generated yet; the demo set is no longer rendered. */
+const NO_ASSOCIATIONS: Association[] = [];
 
 function TrailCard({
   trail,
@@ -147,11 +157,15 @@ export function DashboardWorkspace({
   librarySlot: ReactNode;
   embeddingLabel: string;
 }) {
-  const [notes, setNotes] = useState<Note[]>(seedNotes);
-  const [trails, setTrails] = useState<Trail[]>(seedTrails);
-  const [activeTrailId, setActiveTrailId] = useState<string | null>(
-    "trail-recall",
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [trails, setTrails] = useState<Trail[]>([]);
+  const [activeTrailId, setActiveTrailId] = useState<string | null>(null);
+  const [readySource, setReadySource] = useState<ReadySource | null>(null);
+  const [heroPlaceholder, setHeroPlaceholder] = useState(
+    DEFAULT_HERO_PLACEHOLDER,
   );
+  const heroInputRef = useRef<HTMLInputElement>(null);
+  const reduceMotion = useReducedMotion();
   const [hydrated, setHydrated] = useState(false);
   const [overlay, setOverlay] = useState<Overlay>(null);
   const [uploadTab, setUploadTab] = useState<UploadTab>("pdf");
@@ -170,8 +184,9 @@ export function DashboardWorkspace({
   const [trailSequenceIds, setTrailSequenceIds] = useState<string[]>([]);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<number | null>(null);
+  const trailBuildRef = useRef(false);
 
-  const notify = useCallback((message: string) => {
+  const notify = useCallback((message: string, durationMs = 3600) => {
     setToast(message);
 
     if (toastTimer.current !== null) {
@@ -181,7 +196,7 @@ export function DashboardWorkspace({
     toastTimer.current = window.setTimeout(() => {
       setToast(null);
       toastTimer.current = null;
-    }, 3600);
+    }, durationMs);
   }, []);
 
   useEffect(() => {
@@ -195,16 +210,14 @@ export function DashboardWorkspace({
   useEffect(() => {
     const timer = window.setTimeout(() => {
       try {
-        const stored = window.localStorage.getItem(STORAGE_KEY);
+        const stored = readStoredWorkspace(
+          window.localStorage.getItem(WORKSPACE_STORAGE_KEY),
+        );
 
         if (stored) {
-          const parsed = JSON.parse(stored) as StoredWorkspace;
-
-          if (Array.isArray(parsed.notes) && Array.isArray(parsed.trails)) {
-            setNotes(parsed.notes);
-            setTrails(parsed.trails);
-            setActiveTrailId(parsed.activeTrailId ?? null);
-          }
+          setNotes(stored.notes);
+          setTrails(stored.trails);
+          setActiveTrailId(stored.activeTrailId);
         }
       } catch {
         // A malformed local cache should never block the workspace.
@@ -223,7 +236,7 @@ export function DashboardWorkspace({
 
     try {
       window.localStorage.setItem(
-        STORAGE_KEY,
+        WORKSPACE_STORAGE_KEY,
         JSON.stringify({ notes, trails, activeTrailId }),
       );
     } catch {
@@ -675,24 +688,81 @@ export function DashboardWorkspace({
       return;
     }
 
-    const trail: Trail = {
-      id: `trail-${created.documentId}`,
+    // Without a chosen trail, a new source is only indexed. The Ready card
+    // invites a question instead of inventing a one-node trail.
+    setReadySource({
+      documentId: created.documentId,
       title: created.title,
-      description: isDocument
-        ? "A new path opened from an uploaded source."
-        : "A new path, opened from a single thought.",
-      updatedAt: "Just now",
-      saved: true,
-      nodes: [
-        {
-          ...node,
-          relation: "The beginning",
-        },
-      ],
-    };
+      chunks: created.chunks,
+    });
+  };
 
-    setTrails((current) => [trail, ...current]);
-    setActiveTrailId(trail.id);
+  const focusHero = (placeholder = DEFAULT_HERO_PLACEHOLDER) => {
+    setHeroPlaceholder(placeholder);
+    const input = heroInputRef.current;
+
+    if (!input) {
+      return;
+    }
+
+    input.scrollIntoView({
+      block: "center",
+      behavior: reduceMotion ? "auto" : "smooth",
+    });
+    input.focus({ preventScroll: true });
+  };
+
+  /** Merge an API trail into the workspace, opening it when asked. */
+  const applyGeneratedTrail = (api: TrailApi, open: boolean) => {
+    const mapped = trailToWorkspace(api);
+
+    setNotes((current) => mergeNotes(current, mapped.notes));
+    setTrails((current) => upsertTrail(current, mapped.trail));
+    setActiveTrailId(mapped.trail.id);
+    setReadySource(null);
+    setHeroPlaceholder(DEFAULT_HERO_PLACEHOLDER);
+
+    if (open) {
+      openTrail(mapped.trail);
+    }
+
+    return mapped.trail;
+  };
+
+  const handleTrailContinued = (api: TrailApi) => {
+    const previousCount =
+      trails.find((trail) => trail.id === generatedTrailId(api.id))?.nodes
+        .length ?? 0;
+    const trail = applyGeneratedTrail(api, false);
+    const added = Math.max(0, trail.nodes.length - previousCount);
+
+    // Focus the first new step; the trail dialog scrolls it into view.
+    setFocusedNodeIndex(Math.min(previousCount, trail.nodes.length - 1));
+    notify(`Added ${added} step${added === 1 ? "" : "s"} to “${trail.title}”.`);
+  };
+
+  const handleBuildTrail = async (question: string) => {
+    if (trailBuildRef.current) {
+      notify("A trail is already being built.");
+      return;
+    }
+
+    trailBuildRef.current = true;
+    notify("Building a trail…", 60_000);
+
+    try {
+      const result = await postTrailQuestion("/api/trails", question);
+
+      if (!result.ok) {
+        notify(result.message);
+        return;
+      }
+
+      const trail = applyGeneratedTrail(result.trail, true);
+      notify(`Built “${trail.title}” with ${trail.nodes.length} steps.`);
+    } finally {
+      trailBuildRef.current = false;
+    }
   };
 
   const pinnedNotes = useMemo(
@@ -704,22 +774,23 @@ export function DashboardWorkspace({
   const noteMap = useMemo(() => new Map(notes.map((note) => [note.id, note])), [
     notes,
   ]);
-  const visibleAssociations = seedAssociations
-    .map((association) => ({
-      association,
-      from: noteMap.get(association.fromId),
-      to: noteMap.get(association.toId),
-    }))
+  const visibleAssociations = NO_ASSOCIATIONS.map((association) => ({
+    association,
+    from: noteMap.get(association.fromId),
+    to: noteMap.get(association.toId),
+  }))
     .filter(
-      (
-        entry,
-      ): entry is {
-        association: (typeof seedAssociations)[number];
-        from: Note;
-        to: Note;
-      } => Boolean(entry.from && entry.to),
+      (entry): entry is { association: Association; from: Note; to: Note } =>
+        Boolean(entry.from && entry.to),
     )
     .slice(0, 4);
+  // The map layout is hand-placed demo data; only draw nodes whose notes exist.
+  const visibleMapNodes = mapNodes.filter((node) => noteMap.has(node.noteId));
+  const visibleMapNodeIds = new Set(visibleMapNodes.map((node) => node.id));
+  const visibleMapEdges = mapEdges.filter(
+    (edge) => visibleMapNodeIds.has(edge.from) && visibleMapNodeIds.has(edge.to),
+  );
+  const isEmptyWorkspace = notes.length === 0 && trails.length === 0;
 
   const navActions = [
     {
@@ -832,39 +903,75 @@ export function DashboardWorkspace({
       </header>
 
       <div className="mx-auto w-full max-w-[90rem] flex-1 px-4 pb-10 sm:px-6 lg:px-8">
+        <AnimatePresence initial={false}>
+          {readySource ? (
+            <ReadyCard
+              key={readySource.documentId}
+              source={readySource}
+              onAsk={() =>
+                focusHero(`Ask something about ${readySource.title}…`)
+              }
+              onDismiss={() => {
+                setReadySource(null);
+                setHeroPlaceholder(DEFAULT_HERO_PLACEHOLDER);
+              }}
+            />
+          ) : null}
+        </AnimatePresence>
+
         <DashboardHero
-          onBegin={(prompt) =>
+          inputRef={heroInputRef}
+          placeholder={heroPlaceholder}
+          onTrailBuilt={(trail) => applyGeneratedTrail(trail, true)}
+          onSaveNote={(prompt) =>
             openComposer(prompt ? { content: prompt } : undefined)
           }
+          onUploadSource={() => openUpload("pdf")}
           onSearch={() => setOverlay("search")}
         />
 
         <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 pb-12 text-[10.5px] text-neutral-600 sm:pb-14">
-          <span>
-            <span className="font-mono text-neutral-300">{notes.length}</span>{" "}
-            notes
-          </span>
-          <span className="size-1 rounded-full bg-white/15" />
-          <span>
-            <span className="font-mono text-neutral-300">{trails.length}</span>{" "}
-            trails
-          </span>
-          <span className="size-1 rounded-full bg-white/15" />
-          <span>
-            <span className="font-mono text-neutral-300">
-              {seedAssociations.length}
-            </span>{" "}
-            live associations
-          </span>
-          <span className="hidden size-1 rounded-full bg-white/15 sm:block" />
-          <span className="hidden items-center gap-1.5 sm:flex">
+          {[
+            { label: "notes", count: notes.length },
+            { label: "trails", count: trails.length },
+            { label: "associations", count: visibleAssociations.length },
+          ]
+            .filter((stat) => stat.count > 0)
+            .map((stat) => (
+              <span key={stat.label} className="flex items-center gap-6">
+                <span>
+                  <span className="font-mono text-neutral-300">
+                    {stat.count}
+                  </span>{" "}
+                  {stat.label}
+                </span>
+                <span className="size-1 rounded-full bg-white/15" />
+              </span>
+            ))}
+          <span className="flex items-center gap-1.5">
             <span className="size-1.5 rounded-full bg-white/60" />
             private by default
           </span>
         </div>
 
+        {isEmptyWorkspace ? (
+          <Onboarding
+            hasSources={false}
+            hasTrail={false}
+            onUpload={() => openUpload("pdf")}
+            onAsk={() => focusHero()}
+          />
+        ) : (
         <div className="grid gap-6 lg:grid-cols-12">
           <div className="min-w-0 space-y-6 lg:col-span-8">
+            {trails.length === 0 ? (
+              <Onboarding
+                hasSources={notes.length > 0}
+                hasTrail={false}
+                onUpload={() => openUpload("pdf")}
+                onAsk={() => focusHero()}
+              />
+            ) : (
             <section>
               <div className="mb-4 flex items-end justify-between gap-4">
                 <div>
@@ -897,7 +1004,9 @@ export function DashboardWorkspace({
                 ))}
               </div>
             </section>
+            )}
 
+            {visibleMapNodes.length > 1 ? (
             <motion.section
               initial={{ opacity: 0, y: 18 }}
               animate={{ opacity: 1, y: 0 }}
@@ -921,8 +1030,8 @@ export function DashboardWorkspace({
               <div className="mt-3 -mx-2 overflow-x-auto pb-1 [scrollbar-width:thin] sm:-mx-4 lg:overflow-visible">
                 <div className="min-w-[46rem] lg:min-w-0">
                   <AssociativeMap
-                    nodes={mapNodes}
-                    edges={mapEdges}
+                    nodes={visibleMapNodes}
+                    edges={visibleMapEdges}
                     onOpenNote={openNoteById}
                   />
                 </div>
@@ -950,6 +1059,7 @@ export function DashboardWorkspace({
                 </span>
               </div>
             </motion.section>
+            ) : null}
           </div>
 
           <aside className="min-w-0 space-y-6 lg:col-span-4">
@@ -1007,6 +1117,7 @@ export function DashboardWorkspace({
               </div>
             </motion.section>
 
+            {visibleAssociations.length > 0 ? (
             <motion.section
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
@@ -1067,6 +1178,7 @@ export function DashboardWorkspace({
                 Weave a new connection
               </button>
             </motion.section>
+            ) : null}
 
             <motion.section
               initial={{ opacity: 0, y: 16 }}
@@ -1100,6 +1212,7 @@ export function DashboardWorkspace({
             </motion.section>
           </aside>
         </div>
+        )}
 
         <footer className="mt-14 flex flex-col items-start justify-between gap-3 border-t border-white/[0.055] pt-5 sm:flex-row sm:items-center">
           <p className="text-[10.5px] text-neutral-600">
@@ -1122,6 +1235,7 @@ export function DashboardWorkspace({
         onNewNote={() => openComposer()}
         onOpenTrails={() => setOverlay("trails")}
         onSupport={() => setOverlay("support")}
+        onBuildTrail={handleBuildTrail}
       />
 
       <TrailsDrawer
@@ -1139,7 +1253,12 @@ export function DashboardWorkspace({
         onClose={() => setOverlay(null)}
         initialTab={uploadTab}
         initialDraft={uploadDraft}
-        targetTrailId={activeTrailId}
+        // Generated trails are question-driven; uploads never append to them.
+        targetTrailId={
+          activeTrailId && !apiTrailIdOf({ id: activeTrailId })
+            ? activeTrailId
+            : null
+        }
         onNoteCreated={handleNoteCreated}
         onNotify={notify}
       />
@@ -1165,12 +1284,14 @@ export function DashboardWorkspace({
         onToggleSave={toggleTrailSave}
         onOpenNote={openNote}
         onBranch={branchFromNode}
+        onTrailContinued={handleTrailContinued}
+        onUploadSource={() => openUpload("pdf")}
       />
 
       <NoteDetailDrawer
         note={selectedNote}
         notes={notes}
-        associations={seedAssociations}
+        associations={NO_ASSOCIATIONS}
         trail={noteTrail}
         position={noteTrailPosition}
         direction={noteTransitionDirection}

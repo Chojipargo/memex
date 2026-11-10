@@ -42,6 +42,7 @@ export function CommandPalette({
   onNewNote,
   onOpenTrails,
   onSupport,
+  onBuildTrail,
 }: {
   open: boolean;
   onClose: () => void;
@@ -53,6 +54,7 @@ export function CommandPalette({
   onNewNote: () => void;
   onOpenTrails: () => void;
   onSupport: () => void;
+  onBuildTrail: (question: string) => void;
 }) {
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
@@ -133,15 +135,33 @@ export function CommandPalette({
       },
     ];
 
-    return [...trailItems, ...noteItems, ...actionItems];
+    const trimmedQuery = query.trim();
+    const buildTrailItems: CommandItem[] =
+      trimmedQuery.length >= 3
+        ? [
+            {
+              id: "action-build-trail",
+              kind: "action",
+              title: `Build a trail: “${trimmedQuery}”`,
+              subtitle: "Follow your sources into an ordered path",
+              icon: <SparkIcon className="size-4" />,
+              keywords: `${trimmedQuery} build trail generate question ask`,
+              perform: () => onBuildTrail(trimmedQuery),
+            },
+          ]
+        : [];
+
+    return [...buildTrailItems, ...trailItems, ...noteItems, ...actionItems];
   }, [
     notes,
+    onBuildTrail,
     onNewNote,
     onOpenNote,
     onOpenTrail,
     onOpenTrails,
     onSupport,
     onUpload,
+    query,
     trails,
   ]);
 
