@@ -39,6 +39,7 @@ import {
   type NoteCreated,
 } from "@/components/dashboard/upload-dialog";
 import {
+  BookIcon,
   ChevronRightIcon,
   GlobeIcon,
   HelpIcon,
@@ -61,10 +62,15 @@ import {
 } from "@/lib/dashboard/data";
 import {
   LEGACY_WORKSPACE_STORAGE_KEY,
+  capNoteBody,
   readStoredWorkspace,
+  serializeWorkspace,
   workspaceStorageKey,
 } from "@/lib/dashboard/storage";
-import { LOCAL_NOTE_BODY_MAX_CHARS } from "@/lib/ingestion/constants";
+import {
+  LOCAL_NOTE_BODY_COMPACT_CHARS,
+  LOCAL_NOTE_BODY_MAX_CHARS,
+} from "@/lib/ingestion/constants";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { postTrailQuestion, type TrailApi } from "@/lib/trails/api";
 import {
@@ -184,6 +190,7 @@ export function DashboardWorkspace({
   const [hydrated, setHydrated] = useState(false);
   // Null until the signed-in user is known; nothing is read or written without it.
   const [storageKey, setStorageKey] = useState<string | null>(null);
+  const storageWarnedRef = useRef(false);
   const [overlay, setOverlay] = useState<Overlay>(null);
   const [uploadTab, setUploadTab] = useState<UploadTab>("pdf");
   const [uploadDraft, setUploadDraft] = useState<{
@@ -279,15 +286,60 @@ export function DashboardWorkspace({
       return;
     }
 
-    try {
-      window.localStorage.setItem(
-        storageKey,
-        JSON.stringify({ notes, trails, activeTrailId }),
-      );
-    } catch {
-      // Storage may be unavailable in private or restricted contexts.
+    const workspace = { notes, trails, activeTrailId };
+
+    // Full previews first; if the browser quota is exhausted, keep the
+    // workspace with shorter previews rather than silently saving nothing.
+    for (const maxBodyChars of [
+      LOCAL_NOTE_BODY_MAX_CHARS,
+      LOCAL_NOTE_BODY_COMPACT_CHARS,
+    ]) {
+      try {
+        window.localStorage.setItem(
+          storageKey,
+          serializeWorkspace(workspace, maxBodyChars),
+        );
+        return;
+      } catch {
+        // Quota exceeded, or storage unavailable; try the compact form.
+      }
     }
-  }, [activeTrailId, hydrated, notes, storageKey, trails]);
+
+    if (!storageWarnedRef.current) {
+      storageWarnedRef.current = true;
+      notify(
+        "This browser's storage is full, so recent workspace changes aren't saved locally. Your documents and trails are still saved to your account.",
+        7000,
+      );
+    }
+  }, [activeTrailId, hydrated, notes, notify, storageKey, trails]);
+
+  // "Ask in my library" on a public trail links here with ?ask=<question>.
+  // Build that trail once the workspace (and the hero) is ready, then drop
+  // the parameters so a refresh doesn't ask again.
+  const askedFromUrlRef = useRef(false);
+
+  useEffect(() => {
+    if (!hydrated || askedFromUrlRef.current) {
+      return;
+    }
+
+    askedFromUrlRef.current = true;
+    const url = new URL(window.location.href);
+    const question = url.searchParams.get("ask")?.trim().slice(0, 500) ?? "";
+
+    if (!url.searchParams.has("ask")) {
+      return;
+    }
+
+    url.searchParams.delete("ask");
+    url.searchParams.delete("from");
+    window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
+
+    if (question.length >= 3) {
+      heroRef.current?.ask(question);
+    }
+  }, [hydrated]);
 
   const selectedTrail = selectedTrailId
     ? (trails.find((trail) => trail.id === selectedTrailId) ?? null)
@@ -674,7 +726,7 @@ export function DashboardWorkspace({
   ]);
 
   const handleNoteCreated = (created: NoteCreated) => {
-    const content = created.content.slice(0, LOCAL_NOTE_BODY_MAX_CHARS);
+    const content = capNoteBody(created.content, LOCAL_NOTE_BODY_MAX_CHARS);
     const excerptText = content.replace(/\s+/g, " ").trim();
     const excerpt =
       excerptText.slice(0, 170) + (excerptText.length > 170 ? "…" : "");
@@ -888,6 +940,11 @@ export function DashboardWorkspace({
       onClick: () => setOverlay("research"),
     },
     {
+      label: "Explore",
+      icon: BookIcon,
+      href: "/explore",
+    },
+    {
       label: "Upload",
       icon: UploadIcon,
       onClick: () => openUpload("pdf"),
@@ -925,6 +982,26 @@ export function DashboardWorkspace({
             >
               {navActions.map((action) => {
                 const Icon = action.icon;
+                const className = `group inline-flex h-9 items-center gap-2 rounded-xl border px-2.5 text-[13.5px] font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 sm:px-3 ${
+                  action.emphasized
+                    ? "border-white/[0.16] bg-white/[0.07] text-white hover:border-white/25 hover:bg-white/[0.11]"
+                    : "border-white/[0.08] bg-white/[0.025] text-neutral-400 hover:border-white/[0.16] hover:bg-white/[0.06] hover:text-white"
+                }`;
+
+                if (action.href) {
+                  return (
+                    <Link
+                      key={action.label}
+                      href={action.href}
+                      title={action.label}
+                      aria-label={action.label}
+                      className={className}
+                    >
+                      <Icon className="size-4" />
+                      <span className="hidden md:inline">{action.label}</span>
+                    </Link>
+                  );
+                }
 
                 return (
                   <button
@@ -933,11 +1010,7 @@ export function DashboardWorkspace({
                     onClick={action.onClick}
                     title={action.label}
                     aria-label={action.label}
-                    className={`group inline-flex h-9 items-center gap-2 rounded-xl border px-2.5 text-[13.5px] font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 sm:px-3 ${
-                      action.emphasized
-                        ? "border-white/[0.16] bg-white/[0.07] text-white hover:border-white/25 hover:bg-white/[0.11]"
-                        : "border-white/[0.08] bg-white/[0.025] text-neutral-400 hover:border-white/[0.16] hover:bg-white/[0.06] hover:text-white"
-                    }`}
+                    className={className}
                   >
                     <Icon className="size-4" />
                     <span className="hidden md:inline">{action.label}</span>

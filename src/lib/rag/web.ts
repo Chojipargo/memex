@@ -1,11 +1,13 @@
 import "server-only";
 
+import { getPublic, UnsafeAddressError } from "@/lib/rag/safe-fetch";
 import type { WebSource } from "@/lib/rag/types";
 import {
   isPublicHttpUrl,
   normalizeSourceUrl,
   sourceDomainOf,
 } from "@/lib/rag/url";
+import type { TrailDeadline } from "@/lib/trails/timeouts";
 
 const TAVILY_SEARCH_URL = "https://api.tavily.com/search";
 const TAVILY_EXTRACT_URL = "https://api.tavily.com/extract";
@@ -21,6 +23,16 @@ export class WebSearchError extends Error {
     super(message);
     this.name = "WebSearchError";
     this.status = status;
+  }
+}
+
+const OUT_OF_TIME =
+  "Web research ran out of time. Try again, or ask a more specific question.";
+
+/** Refuse to start a request that cannot finish inside the route's budget. */
+function requireTime(deadline: TrailDeadline): void {
+  if (!deadline.canStartRequest(2_000)) {
+    throw new WebSearchError(OUT_OF_TIME, 504);
   }
 }
 
@@ -167,7 +179,10 @@ function toWebSource(value: unknown, provider: string): WebSource | null {
 async function tavilyRequest(
   url: string,
   body: Record<string, unknown>,
+  deadline: TrailDeadline,
 ): Promise<unknown> {
+  requireTime(deadline);
+
   let response: Response;
 
   try {
@@ -175,12 +190,15 @@ async function tavilyRequest(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      signal: deadline.timeoutSignal(REQUEST_TIMEOUT_MS),
     });
   } catch (error) {
     throw new WebSearchError(
-      error instanceof Error && error.name === "TimeoutError"
-        ? "The web research provider timed out. Try again in a moment."
+      error instanceof Error &&
+      (error.name === "TimeoutError" || error.name === "AbortError")
+        ? deadline.canStartRequest(0)
+          ? "The web research provider timed out. Try again in a moment."
+          : OUT_OF_TIME
         : "Could not reach the web research provider. Check the network and try again.",
       504,
     );
@@ -219,17 +237,22 @@ async function tavilyRequest(
  */
 export async function searchWeb(
   query: string,
+  deadline: TrailDeadline,
   maxResults = 6,
 ): Promise<WebSource[]> {
-  const payload = await tavilyRequest(TAVILY_SEARCH_URL, {
-    api_key: tavilyKey(),
-    query,
-    search_depth: "advanced",
-    topic: "general",
-    include_answer: false,
-    include_raw_content: true,
-    max_results: Math.min(Math.max(maxResults, 1), MAX_RESULTS),
-  });
+  const payload = await tavilyRequest(
+    TAVILY_SEARCH_URL,
+    {
+      api_key: tavilyKey(),
+      query,
+      search_depth: "advanced",
+      topic: "general",
+      include_answer: false,
+      include_raw_content: true,
+      max_results: Math.min(Math.max(maxResults, 1), MAX_RESULTS),
+    },
+    deadline,
+  );
 
   const record =
     typeof payload === "object" && payload !== null && !Array.isArray(payload)
@@ -254,50 +277,62 @@ export async function searchWeb(
 }
 
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+const MAX_REDIRECTS = 4;
+
+type PageResponse = Awaited<ReturnType<typeof getPublic>>;
 
 /**
- * Fetch a public page with manual redirect handling so a redirect cannot turn
- * a validated public URL into a request to localhost or a private network.
+ * Fetch a public page, following redirects by hand so every hop is checked:
+ * syntactically here, and against its resolved IP inside `getPublic`.
  */
-async function fetchPublicPage(url: string): Promise<Response> {
+async function fetchPage(url: string, deadline: TrailDeadline): Promise<WebSource> {
   let current = url;
 
-  for (let hop = 0; hop < 4; hop += 1) {
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
     if (!isPublicHttpUrl(current)) {
       throw new WebSearchError(
-        "That URL redirects to a private or unsupported address.",
+        "That URL points to a private or unsupported address.",
         422,
       );
     }
 
-    let response: Response;
+    requireTime(deadline);
+
+    let response: PageResponse;
 
     try {
-      response = await fetch(current, {
+      response = await getPublic(current, {
         headers: {
           Accept: "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5",
-          "User-Agent":
-            "memex.ai research bot (+https://memex.ai; contact: support@memex.ai)",
+          "User-Agent": "memex.ai research bot",
         },
-        redirect: "manual",
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        signal: deadline.timeoutSignal(REQUEST_TIMEOUT_MS),
+        maxBytes: MAX_RAW_BYTES,
       });
     } catch (error) {
+      if (error instanceof UnsafeAddressError) {
+        throw new WebSearchError(error.message, 422);
+      }
+
+      const aborted =
+        error instanceof Error &&
+        (error.name === "AbortError" || error.name === "TimeoutError");
+
       throw new WebSearchError(
-        error instanceof Error && error.name === "TimeoutError"
-          ? "Fetching that URL timed out. Try a different source."
+        aborted
+          ? deadline.canStartRequest(0)
+            ? "Fetching that URL timed out. Try a different source."
+            : OUT_OF_TIME
           : "Could not fetch that URL. Check the address and try again.",
         504,
       );
     }
 
     if (!REDIRECT_STATUSES.has(response.status)) {
-      return response;
+      return toPageSource(response, current);
     }
 
-    const location = response.headers.get("location");
-
-    if (!location) {
+    if (!response.location) {
       throw new WebSearchError(
         "That URL redirected without a destination. Try a different source.",
         422,
@@ -305,7 +340,7 @@ async function fetchPublicPage(url: string): Promise<Response> {
     }
 
     try {
-      current = new URL(location, current).toString();
+      current = new URL(response.location, current).toString();
     } catch {
       throw new WebSearchError(
         "That URL redirected to an invalid address. Try a different source.",
@@ -320,52 +355,15 @@ async function fetchPublicPage(url: string): Promise<Response> {
   );
 }
 
-async function readLimitedText(response: Response): Promise<string> {
-  if (!response.body) {
-    return (await response.text()).slice(0, MAX_RAW_BYTES);
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let received = 0;
-  let text = "";
-
-  try {
-    for (;;) {
-      const { done, value } = await reader.read();
-
-      if (done) {
-        break;
-      }
-
-      received += value.byteLength;
-
-      if (received > MAX_RAW_BYTES) {
-        await reader.cancel();
-        break;
-      }
-
-      text += decoder.decode(value, { stream: true });
-    }
-
-    text += decoder.decode();
-    return text;
-  } finally {
-    reader.releaseLock();
-  }
-}
-
-async function fetchPage(url: string): Promise<WebSource> {
-  const response = await fetchPublicPage(url);
-
-  if (!response.ok) {
+function toPageSource(response: PageResponse, pageUrl: string): WebSource {
+  if (response.status < 200 || response.status >= 300) {
     throw new WebSearchError(
       `That URL returned status ${response.status}. Try a different source.`,
       response.status === 404 ? 422 : 502,
     );
   }
 
-  const contentType = response.headers.get("content-type") ?? "";
+  const { contentType } = response;
 
   if (
     !contentType.includes("text/html") &&
@@ -378,7 +376,7 @@ async function fetchPage(url: string): Promise<WebSource> {
     );
   }
 
-  const raw = await readLimitedText(response);
+  const raw = response.body;
   const content = cleanContent(
     contentType.includes("text/plain") ? raw : htmlToText(raw),
   );
@@ -390,7 +388,7 @@ async function fetchPage(url: string): Promise<WebSource> {
     );
   }
 
-  const finalUrl = normalizeSourceUrl(response.url || url);
+  const finalUrl = normalizeSourceUrl(pageUrl);
 
   if (!finalUrl) {
     throw new WebSearchError("That URL is not a public web page.", 422);
@@ -413,7 +411,10 @@ async function fetchPage(url: string): Promise<WebSource> {
 }
 
 /** Extract one URL for manual research, preferring Tavily's clean extractor. */
-export async function extractUrl(rawUrl: string): Promise<WebSource> {
+export async function extractUrl(
+  rawUrl: string,
+  deadline: TrailDeadline,
+): Promise<WebSource> {
   const url = normalizeSourceUrl(rawUrl);
 
   if (!url) {
@@ -424,15 +425,19 @@ export async function extractUrl(rawUrl: string): Promise<WebSource> {
   }
 
   if (!isWebSearchConfigured()) {
-    return fetchPage(url);
+    return fetchPage(url, deadline);
   }
 
   try {
-    const payload = await tavilyRequest(TAVILY_EXTRACT_URL, {
-      api_key: tavilyKey(),
-      urls: [url],
-      extract_depth: "advanced",
-    });
+    const payload = await tavilyRequest(
+      TAVILY_EXTRACT_URL,
+      {
+        api_key: tavilyKey(),
+        urls: [url],
+        extract_depth: "advanced",
+      },
+      deadline,
+    );
     const record =
       typeof payload === "object" && payload !== null && !Array.isArray(payload)
         ? (payload as Record<string, unknown>)
@@ -444,12 +449,13 @@ export async function extractUrl(rawUrl: string): Promise<WebSource> {
       return source;
     }
   } catch (error) {
-    // Fall back to a direct fetch when extraction is unavailable. Search and
-    // generation errors are still surfaced separately.
-    if (!(error instanceof WebSearchError)) {
+    // Fall back to a direct fetch when extraction is unavailable, unless the
+    // budget is already spent. Search and generation errors are surfaced
+    // separately.
+    if (!(error instanceof WebSearchError) || error.message === OUT_OF_TIME) {
       throw error;
     }
   }
 
-  return fetchPage(url);
+  return fetchPage(url, deadline);
 }

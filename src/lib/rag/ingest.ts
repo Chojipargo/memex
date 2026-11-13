@@ -6,9 +6,16 @@ import { chunkPages, type DocumentChunk } from "@/lib/ingestion/chunk";
 import { embedTexts } from "@/lib/ingestion/embeddings";
 import type { WebSource } from "@/lib/rag/types";
 import { normalizeSourceUrl } from "@/lib/rag/url";
-import type { MatchedChunk, ServerSupabase } from "@/lib/trails/server";
+import {
+  cosineSimilarity,
+  type MatchedChunk,
+  type ServerSupabase,
+} from "@/lib/trails/server";
+import type { TrailDeadline } from "@/lib/trails/timeouts";
 
 const MAX_CHUNKS_PER_SOURCE = 8;
+/** Saved web sources hold at most 8 chunks; this only bounds bad data. */
+const MAX_EXISTING_CHUNKS_SCANNED = 64;
 const MAX_SOURCES_PER_REQUEST = 6;
 const MAX_EMBEDDED_TEXT = 200_000;
 const WEB_EMBEDDING_TIMEOUT_MS = 15_000;
@@ -91,16 +98,37 @@ function candidateFromRow(
   };
 }
 
+function parseEmbedding(value: unknown): number[] | null {
+  let parsed: unknown = value;
+
+  if (typeof value === "string") {
+    try {
+      parsed = JSON.parse(value);
+    } catch {
+      return null;
+    }
+  }
+
+  return Array.isArray(parsed) && parsed.every((item) => typeof item === "number")
+    ? (parsed as number[])
+    : null;
+}
+
+/**
+ * Reuse a source researched earlier, scoring its stored chunks against the
+ * current question so the most relevant passages are kept, not the first ones.
+ */
 async function loadExistingChunks(
   supabase: ServerSupabase,
   document: ExistingDocument,
+  queryEmbedding: ReadonlyArray<number>,
 ): Promise<MatchedChunk[]> {
   const result = await supabase
     .from("chunks")
-    .select("id, page, text")
+    .select("id, page, text, embedding")
     .eq("document_id", document.document_id)
     .order("id", { ascending: true })
-    .limit(MAX_CHUNKS_PER_SOURCE);
+    .limit(MAX_EXISTING_CHUNKS_SCANNED);
 
   if (result.error) {
     throw new SourceIngestError(
@@ -113,15 +141,16 @@ async function loadExistingChunks(
 
   for (const row of result.data ?? []) {
     const record = asRecord(row);
+    const embedding = record ? parseEmbedding(record.embedding) : null;
 
-    if (!record) {
+    if (!record || !embedding) {
       continue;
     }
 
     const candidate = candidateFromRow(
       record,
       document,
-      0.82 - chunks.length * 0.01,
+      cosineSimilarity(queryEmbedding, embedding),
     );
 
     if (candidate) {
@@ -129,7 +158,9 @@ async function loadExistingChunks(
     }
   }
 
-  return chunks;
+  return chunks
+    .sort((a, b) => b.similarity - a.similarity)
+    .slice(0, MAX_CHUNKS_PER_SOURCE);
 }
 
 async function findExisting(
@@ -161,6 +192,7 @@ async function insertChunks(
   documentId: string,
   chunks: ReadonlyArray<DocumentChunk>,
   embeddings: ReadonlyArray<number[]>,
+  queryEmbedding: ReadonlyArray<number>,
 ): Promise<MatchedChunk[]> {
   const rows = chunks.map((chunk, index) => ({
     document_id: documentId,
@@ -194,7 +226,8 @@ async function insertChunks(
           source_provider: null,
           retrieved_at: null,
         },
-        0.8 - index * 0.01,
+        // Rows come back in insert order, matching `embeddings`.
+        embeddings[index] ? cosineSimilarity(queryEmbedding, embeddings[index]) : 0,
       ),
     )
     .filter((candidate): candidate is MatchedChunk => candidate !== null);
@@ -205,6 +238,7 @@ async function savePreparedSource(
   userId: string,
   pending: PendingSource,
   embeddings: ReadonlyArray<number[]>,
+  queryEmbedding: ReadonlyArray<number>,
 ): Promise<MatchedChunk[]> {
   const { source, sourceKey, chunks } = pending;
   const documentId = randomUUID();
@@ -238,7 +272,7 @@ async function savePreparedSource(
     // Another concurrent request may have inserted this URL first.
     if (inserted.error.code === "23505") {
       const raced = await findExisting(supabase, userId, sourceKey);
-      return raced ? loadExistingChunks(supabase, raced) : [];
+      return raced ? loadExistingChunks(supabase, raced, queryEmbedding) : [];
     }
 
     throw new SourceIngestError(
@@ -250,14 +284,20 @@ async function savePreparedSource(
   let saved: MatchedChunk[];
 
   try {
-    saved = await insertChunks(supabase, documentId, chunks, embeddings);
+    saved = await insertChunks(
+      supabase,
+      documentId,
+      chunks,
+      embeddings,
+      queryEmbedding,
+    );
   } catch (error) {
     // Do not leave an orphaned document behind when chunks fail to insert.
     await supabase.from("documents").delete().eq("document_id", documentId);
     throw error;
   }
 
-  return saved.map((candidate, index) => ({
+  return saved.map((candidate) => ({
     ...candidate,
     documentTitle: source.title,
     sourceOrigin: "web",
@@ -265,7 +305,6 @@ async function savePreparedSource(
     sourceDomain: source.domain,
     sourceProvider: source.provider,
     retrievedAt,
-    similarity: 0.8 - index * 0.01,
   }));
 }
 
@@ -273,11 +312,16 @@ async function savePreparedSource(
  * Chunk, embed, and persist web sources in the user's library. Existing URLs
  * are reused instead of re-embedded, which makes repeated research cheap and
  * lets future library searches find the source.
+ *
+ * Every returned passage carries its real cosine similarity to
+ * `queryEmbedding`, so web and library passages can be ranked together.
  */
 export async function saveWebSources(
   supabase: ServerSupabase,
   userId: string,
   sources: ReadonlyArray<WebSource>,
+  queryEmbedding: ReadonlyArray<number>,
+  deadline: TrailDeadline,
 ): Promise<MatchedChunk[]> {
   const seen = new Set<string>();
   const candidates: MatchedChunk[] = [];
@@ -296,7 +340,9 @@ export async function saveWebSources(
       const existing = await findExisting(supabase, userId, sourceKey);
 
       if (existing) {
-        candidates.push(...(await loadExistingChunks(supabase, existing)));
+        candidates.push(
+          ...(await loadExistingChunks(supabase, existing, queryEmbedding)),
+        );
         continue;
       }
 
@@ -324,12 +370,19 @@ export async function saveWebSources(
     );
     let embeddings: number[][];
 
+    if (!deadline.canStartRequest(2_000)) {
+      throw new SourceIngestError(
+        "Web research ran out of time. Try again, or ask a more specific question.",
+        504,
+      );
+    }
+
     try {
       embeddings = await embedTexts(
         pending.flatMap((item) => item.chunks.map((chunk) => chunk.text)),
         "RETRIEVAL_DOCUMENT",
         {
-          timeoutMs: WEB_EMBEDDING_TIMEOUT_MS,
+          timeoutMs: Math.min(WEB_EMBEDDING_TIMEOUT_MS, deadline.remainingMs()),
           maxAttempts: 1,
         },
       );
@@ -362,6 +415,7 @@ export async function saveWebSources(
             userId,
             item,
             sourceEmbeddings,
+            queryEmbedding,
           )),
         );
       } catch (error) {
@@ -383,5 +437,7 @@ export async function saveWebSources(
     throw new SourceIngestError(lastError.message, 503);
   }
 
-  return candidates.slice(0, MAX_SOURCES_PER_REQUEST * MAX_CHUNKS_PER_SOURCE);
+  return candidates
+    .sort((a, b) => b.similarity - a.similarity)
+    .slice(0, MAX_SOURCES_PER_REQUEST * MAX_CHUNKS_PER_SOURCE);
 }

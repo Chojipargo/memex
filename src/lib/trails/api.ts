@@ -230,6 +230,11 @@ export function readApiError(value: unknown): string | null {
   return asNonEmptyString(record.error);
 }
 
+/** The server decides when "upload a source" is the right suggestion. */
+function readLowCoverage(value: unknown): boolean {
+  return asRecord(value)?.lowCoverage === true;
+}
+
 function errorResult(
   message: string,
   lowCoverage: boolean,
@@ -409,7 +414,7 @@ export async function postTrailQuestion(
       return errorResult(
         readApiError(payload) ??
           `The request failed (${response.status}). Try again.`,
-        response.status === 422,
+        readLowCoverage(payload),
       );
     }
 

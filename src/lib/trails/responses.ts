@@ -29,6 +29,35 @@ function hasStatus(error: unknown): error is { status: number; message: string }
   );
 }
 
+/**
+ * True only when the request can be fixed by adding a source or researching
+ * the web: an empty or non-covering library. Bad URLs, empty web results, and
+ * provider failures are 422s too, but those prompts don't help there.
+ */
+function isLowCoverage(error: unknown): boolean {
+  if (error instanceof HybridTrailError) {
+    return error.lowCoverage;
+  }
+
+  // "There are no passages to build a trail from" and its continuation twin.
+  return error instanceof TrailGenerationError && error.status === 422;
+}
+
+/**
+ * Postgres and PostgREST wording for objects a migration creates. Matched
+ * against database errors only, so a message that merely mentions a "column"
+ * is not mistaken for a missing migration.
+ */
+const MISSING_SCHEMA =
+  /\b(?:column|relation|function)\b[\s\S]*?\bdoes not exist\b|could not find the (?:function|table)\b|could not find the '[^']+' column/i;
+
+function isMissingSchema(error: unknown): boolean {
+  return (
+    (error instanceof TrailError || error instanceof SourceIngestError) &&
+    MISSING_SCHEMA.test(error.message)
+  );
+}
+
 function setupHint(message: string): string {
   return (
     trailSetupHint(message, "using hybrid research") ??
@@ -55,7 +84,7 @@ export function toTrailErrorPayload(
     return {
       error: error.message,
       status: error.status,
-      lowCoverage: error.status === 422,
+      lowCoverage: isLowCoverage(error),
     };
   }
 
@@ -63,7 +92,7 @@ export function toTrailErrorPayload(
     return {
       error: error.message,
       status: error.status,
-      lowCoverage: error.status === 422,
+      lowCoverage: false,
     };
   }
 
@@ -81,15 +110,8 @@ function setupHintPayload(
   fallbackMessage: string,
 ): TrailErrorPayload {
   const payload = toTrailErrorPayload(error, fallbackMessage);
-  const message = payload.error.toLowerCase();
 
-  if (
-    message.includes("column") ||
-    message.includes("source_key") ||
-    message.includes("match_documents") ||
-    message.includes("could not find the function") ||
-    (message.includes("function") && message.includes("does not exist"))
-  ) {
+  if (isMissingSchema(error)) {
     return { ...payload, error: setupHint(payload.error), status: 503 };
   }
 
