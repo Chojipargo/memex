@@ -94,10 +94,18 @@ Body: `{ "question": string }` (3–500 characters).
 
 `buildHybridContinuation` runs two searches in parallel, both excluding chunks already on the trail:
 
-- an **anchored** search on the follow-up plus the last step's note and excerpt, so the continuation stays connected to where the trail ends;
-- a **direct** search on the follow-up alone.
+- a **step** search from the last step's own stored embedding (`match_documents_near_chunk`, no embedding call), so the continuation stays connected to where the trail ends;
+- a **direct** search on the embedded follow-up question.
 
-Coverage is judged on the direct search only. The anchored query embeds a passage that is already in the library, so its neighbours always score highly and would otherwise hide that the library knows nothing about the follow-up. When the library doesn't cover it, the web search query includes the trail title for context, and passages are scored against the follow-up itself. Claude then writes 2–4 steps whose first note bridges from the current last step, and `append_generated_trail_steps` appends them under an advisory lock on the trail.
+When the library covers the follow-up, the two ranked lists are combined with weighted **Reciprocal Rank Fusion** (`src/lib/rag/fusion.ts`): a passage at rank *r* in a list of weight *w* scores *w / (60 + r)*, summed across lists. Passages that are both near the current step and on topic rise to the top. `TRAIL_STEP_WEIGHT` (default `0.5`) is the step search's share of the vote. Ranks are fused rather than raw cosine scores because a passage's neighbours score much higher than a question's matches.
+
+Coverage is judged on the direct search only. A passage's neighbours always score highly and would otherwise hide that the library knows nothing about the follow-up. When the library doesn't cover it, the web search query includes the trail title for context, and passages are scored against the follow-up itself. Claude then writes 2–4 steps whose first note bridges from the current last step, and `append_generated_trail_steps` appends them under an advisory lock on the trail.
+
+### Next-step proposals (`POST /api/trails/[id]/proposals`)
+
+Body: `{ "question"?: string }`. `buildNextStepProposals` fuses the step search with a search on the question or, with no question, on the trail's theme (its title and original question), and gives the top 12 library passages to Claude with the current passage. Claude returns up to 5 **alternative** next steps, best first, each with the reason for its link, a gist, and a key quote. Where the two passages are already linked, the existing reason is shown instead. Proposals are not stored.
+
+`POST /api/trails/[id]/proposals/accept` with `{ fromChunkId, chunkId, reason, reasonEdited, gist?, quote? }` appends the chosen passage. The link is saved as `claude_accepted`, or as `user` if the reader reworded the reason. The quote is located again on the server, and `fromChunkId` must still be the trail's last step (otherwise `409`). Proposals are library-only; use Continue for follow-ups that need the web.
 
 ### Streaming
 
@@ -126,6 +134,7 @@ Migrations in `supabase/migrations/`, applied in order:
 | `20261113150000_published_trails.sql` | `published_trails` (public trail snapshots), `published_trail_learners`, and the `publish_trail` / `unpublish_trail` / `get_trail_publication` / `record_trail_learner` functions |
 | `20261114090000_associative_links.sql` | `links` table; `link_id` and `annotation` on `trail_steps`; converts existing trails into links; `link_trail_steps`, `create_user_link`, `record_link_traversal`, `get_passage_backlinks` |
 | `20261114120000_trail_editing.sql` | `parent_trail_id`, `branch_from_step_id`, `updated_at` on `trails`; `rewrite_trail` and `start_side_trail`; drops the retired `trail_nodes` table and its functions |
+| `20261115090000_step_aware_retrieval.sql` | `match_documents_near_chunk`: nearest passages to a stored passage embedding |
 
 Every private table has owner-scoped RLS (`user_id = auth.uid()`, or through the owning document for `chunks`). The RPC functions are `security invoker` and check ownership of the trail and every cited chunk themselves. The exception is published trails (below).
 

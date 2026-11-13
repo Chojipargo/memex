@@ -269,6 +269,41 @@ export async function matchCandidates(
     .slice(0, count);
 }
 
+/**
+ * The user's passages nearest to one of their passages, by its stored
+ * embedding (no embedding call). Used to keep a trail's next step close to
+ * where it currently is.
+ */
+export async function matchNearChunk(
+  supabase: ServerSupabase,
+  chunkId: number,
+  count = 30,
+  excludeChunkIds: ReadonlySet<number> = new Set(),
+): Promise<MatchedChunk[]> {
+  const match = await supabase.rpc("match_documents_near_chunk", {
+    p_chunk_id: chunkId,
+    match_count: Math.min(99, count + excludeChunkIds.size),
+  });
+
+  if (match.error) {
+    throw new TrailError(
+      trailSetupHint(match.error.message, "continuing trails") ??
+        "Could not search near this passage.",
+      503,
+    );
+  }
+
+  const candidates = parseMatchedChunks(match.data);
+
+  if (!candidates) {
+    throw new TrailError("The retrieval service returned an unexpected response.", 502);
+  }
+
+  return candidates
+    .filter((candidate) => !excludeChunkIds.has(candidate.chunkId))
+    .slice(0, count);
+}
+
 /** Cosine similarity of two embeddings (Gemini vectors are L2-normalized). */
 export function cosineSimilarity(a: ReadonlyArray<number>, b: ReadonlyArray<number>): number {
   let dot = 0;

@@ -1,5 +1,6 @@
 import "server-only";
 
+import { readStepWeight, reciprocalRankFusion } from "@/lib/rag/fusion";
 import { saveWebSources } from "@/lib/rag/ingest";
 import type { TrailProgress } from "@/lib/rag/types";
 import { extractUrl, isWebSearchConfigured, searchWeb } from "@/lib/rag/web";
@@ -9,6 +10,7 @@ import {
   type ContinuedTrail,
   type GeneratedTrail,
   generateTrail,
+  proposeNextSteps,
   TRAIL_COVERAGE_THRESHOLD,
 } from "@/lib/trails/generate";
 import {
@@ -16,6 +18,7 @@ import {
   hasCoverage,
   type MatchedChunk,
   matchCandidates,
+  matchNearChunk,
   type ServerSupabase,
 } from "@/lib/trails/server";
 import { TrailDeadline } from "@/lib/trails/timeouts";
@@ -73,6 +76,35 @@ const WEAVING: TrailProgress = {
 };
 
 const MAX_CANDIDATES = 30;
+
+/** Candidates Claude chooses next-step proposals from. */
+const PROPOSAL_POOL = 12;
+
+/**
+ * Share of the ranking given to "near the current passage" versus "about the
+ * question or theme" when continuing a trail. 0.5 weighs them equally.
+ */
+const STEP_WEIGHT = readStepWeight(process.env.TRAIL_STEP_WEIGHT);
+
+/**
+ * Fuse the passage-neighbour and query searches with Reciprocal Rank Fusion,
+ * so the next step is both close to where the trail is and on topic.
+ */
+function fuseStepAndQuery(
+  near: ReadonlyArray<MatchedChunk>,
+  query: ReadonlyArray<MatchedChunk>,
+  count: number,
+): MatchedChunk[] {
+  return reciprocalRankFusion(
+    [
+      { items: near, weight: STEP_WEIGHT },
+      { items: query, weight: 1 - STEP_WEIGHT },
+    ],
+    (candidate) => candidate.chunkId,
+  )
+    .slice(0, count)
+    .map((entry) => entry.item);
+}
 
 /** Upper bound on web research (search or extract, fetches, embedding). */
 const WEB_RESEARCH_BUDGET_MS = 20_000;
@@ -278,35 +310,22 @@ export async function buildHybridContinuation({
   const deadline = new TrailDeadline();
   const existing = new Set(trail.steps.map((step) => step.chunkId));
   const lastStep = trail.steps.at(-1);
-  // Anchor retrieval on where the trail currently ends so the continuation
-  // stays connected to it, not only to the follow-up question.
-  const anchoredQuery = lastStep
-    ? `${question}\n\n${lastStep.note}\n\n${lastStep.excerpt}`
-    : question;
-  const [anchoredEmbedding, directEmbedding] = await embedQueries([
-    anchoredQuery,
-    question,
-  ]);
-  // Judge coverage on the follow-up question alone. The anchored query embeds
-  // the last step's excerpt, which is itself a stored chunk, so its neighbours
-  // always score as "covered" and the web fallback would never fire for a
-  // follow-up the library knows nothing about.
-  const [anchored, direct] = await Promise.all([
-    matchCandidates(supabase, anchoredEmbedding, MAX_CANDIDATES, existing),
+  // Two searches: from the current passage's own stored embedding, so the
+  // continuation stays connected to where the trail ends, and from the
+  // follow-up question.
+  const [directEmbedding] = await embedQueries([question]);
+  const [near, direct] = await Promise.all([
+    lastStep
+      ? matchNearChunk(supabase, lastStep.chunkId, MAX_CANDIDATES, existing)
+      : Promise.resolve([]),
     matchCandidates(supabase, directEmbedding, MAX_CANDIDATES, existing),
   ]);
 
+  // Judge coverage on the follow-up question alone. A passage's neighbours
+  // always score highly, so they would hide that the library knows nothing
+  // about the follow-up and the web fallback would never fire.
   if (hasCoverage(direct)) {
-    // Keep the anchored matches first so the trail stays connected.
-    const byChunk = new Map<number, MatchedChunk>();
-
-    for (const candidate of [...anchored, ...direct]) {
-      if (!byChunk.has(candidate.chunkId)) {
-        byChunk.set(candidate.chunkId, candidate);
-      }
-    }
-
-    const local = [...byChunk.values()].slice(0, MAX_CANDIDATES);
+    const local = fuseStepAndQuery(near, direct, MAX_CANDIDATES);
 
     onProgress?.(WEAVING);
 
@@ -349,5 +368,81 @@ export async function buildHybridContinuation({
     continued: await continueTrail(trail, question, candidates, deadline),
     candidates,
     mode: modeOf(candidates),
+  };
+}
+
+export type NextStepProposalsResult = {
+  proposals: ContinuedTrail;
+  candidates: MatchedChunk[];
+};
+
+/**
+ * Alternative next steps from where a trail ends, each with the reason for
+ * its link. Retrieval fuses passages near the current step with passages
+ * about the reader's question, or, with no question, the trail's theme
+ * (title and original question). Library only; nothing is saved.
+ */
+export async function buildNextStepProposals({
+  supabase,
+  trail,
+  question,
+}: {
+  supabase: ServerSupabase;
+  trail: TrailApi;
+  question: string | null;
+}): Promise<NextStepProposalsResult> {
+  const lastStep = trail.steps.at(-1);
+
+  if (!lastStep) {
+    throw new HybridTrailError("This trail has no steps to continue from.", 422);
+  }
+
+  const deadline = new TrailDeadline();
+  const existing = new Set(trail.steps.map((step) => step.chunkId));
+  const intent = question ?? `${trail.title}. ${trail.question}`;
+  const [intentEmbedding] = await embedQueries([intent]);
+  const [near, about] = await Promise.all([
+    matchNearChunk(supabase, lastStep.chunkId, MAX_CANDIDATES, existing),
+    matchCandidates(supabase, intentEmbedding, MAX_CANDIDATES, existing),
+  ]);
+
+  // A typed question the library doesn't cover is better served by a full
+  // continuation, which can research the web.
+  if (question && !hasCoverage(about)) {
+    throw new HybridTrailError(
+      "Your library doesn't cover that yet. Use Continue to research it on the web, or add a source.",
+      422,
+      true,
+    );
+  }
+
+  const candidates = fuseStepAndQuery(near, about, PROPOSAL_POOL);
+
+  if (candidates.length === 0) {
+    throw new HybridTrailError(
+      "There are no other passages in your library to go to from here. Add a source to keep going.",
+      422,
+      true,
+    );
+  }
+
+  return {
+    proposals: await proposeNextSteps(
+      trail,
+      {
+        chunkId: lastStep.chunkId,
+        documentId: lastStep.documentId,
+        documentTitle: lastStep.documentTitle,
+        page: lastStep.page,
+        content: lastStep.content,
+        sourceOrigin: lastStep.sourceOrigin,
+        sourceDomain: lastStep.sourceDomain,
+      },
+      question,
+      candidates,
+      existing,
+      deadline,
+    ),
+    candidates,
   };
 }
