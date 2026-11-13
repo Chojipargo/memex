@@ -178,7 +178,6 @@ npm start       # serve the production build
 
 This project uses **Next.js 16**, which differs from older versions: route protection lives in `src/proxy.ts` (not `middleware.ts`), and Cache Components are on, so anything that reads the session must sit inside a `<Suspense>` boundary. Read `node_modules/next/dist/docs/` before changing framework-level code (see `AGENTS.md`).
 
-## Troubleshooting
 
 | Problem | Fix |
 | --- | --- |
