@@ -41,8 +41,15 @@ export const DOCUMENT_TEXT_MAX_BYTES = 5 * 1024 * 1024;
 export const NOTE_MAX_BYTES = 1 * 1024 * 1024;
 export const NOTE_MAX_LABEL = "1 MB";
 
-/** Local workspace cache; the full extracted text lives in Supabase chunks. */
-export const LOCAL_NOTE_BODY_MAX_CHARS = 200_000;
+/**
+ * Characters of a note or document kept in the browser's workspace cache.
+ * The full text lives in Supabase chunks; the cache only needs a readable
+ * preview, and localStorage holds roughly 5 MB per origin in total.
+ */
+export const LOCAL_NOTE_BODY_MAX_CHARS = 20_000;
+
+/** Fallback preview size when the browser's storage quota is exhausted. */
+export const LOCAL_NOTE_BODY_COMPACT_CHARS = 2_000;
 
 /** Private Supabase Storage bucket that holds the raw documents. */
 export const STORAGE_BUCKET = "documents";

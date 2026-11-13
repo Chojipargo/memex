@@ -189,9 +189,10 @@ function isMissingMetadataColumn(message: string) {
 
   return (
     metadataColumns.some((column) => lower.includes(column)) &&
-    (lower.includes("column") ||
-      lower.includes("schema cache") ||
-      lower.includes("could not find"))
+    // Only "column does not exist" / PostgREST "could not find the column",
+    // not any error that happens to mention a column (e.g. a NOT NULL failure).
+    ((lower.includes("column") && lower.includes("does not exist")) ||
+      (lower.includes("could not find") && lower.includes("schema cache")))
   );
 }
 

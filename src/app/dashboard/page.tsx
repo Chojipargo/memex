@@ -18,8 +18,22 @@ type DocumentRow = {
   title: string;
   storage_path: string;
   created_at: string;
+  source_kind: string | null;
   chunks: { count: number }[] | null;
 };
+
+/** Label for the recent-sources list, based on where the document came from. */
+function documentKindLabel(document: DocumentRow): "Note" | "Image" | "PDF" | "Document" {
+  if (document.source_kind === "note" || document.storage_path.startsWith("notes/")) {
+    return "Note";
+  }
+
+  if (/\.(png|jpe?g|webp|bmp)$/i.test(document.storage_path)) {
+    return "Image";
+  }
+
+  return /\.pdf$/i.test(document.storage_path) ? "PDF" : "Document";
+}
 
 const dateFormatter = new Intl.DateTimeFormat("en-US", {
   month: "short",
@@ -95,7 +109,10 @@ async function LibraryContent() {
 
   const { data, error } = await supabase
     .from("documents")
-    .select("document_id, title, storage_path, created_at, chunks(count)")
+    .select("document_id, title, storage_path, created_at, source_kind, chunks(count)")
+    // Web research is saved as documents too, but this list shows the
+    // reader's own uploads and notes; researched pages appear on trails.
+    .neq("source_kind", "web")
     .order("created_at", { ascending: false })
     .limit(5);
 
@@ -103,7 +120,7 @@ async function LibraryContent() {
     return (
       <SetupNotice
         title="Library unavailable"
-        message="Apply the Supabase migration to create the documents and chunks tables, then refresh this page."
+        message="Apply the Supabase migrations (npx supabase db push), then refresh this page."
       />
     );
   }
@@ -125,10 +142,8 @@ async function LibraryContent() {
     <ul className="divide-y divide-white/[0.055]">
       {documents.map((document) => {
         const chunkCount = document.chunks?.[0]?.count ?? 0;
-        const isNote = document.storage_path.startsWith("notes/");
-        const isImage =
-          !isNote && /\.(png|jpe?g|webp|bmp)$/i.test(document.storage_path);
-        const Icon = isNote ? NoteIcon : FileTextIcon;
+        const kind = documentKindLabel(document);
+        const Icon = kind === "Note" ? NoteIcon : FileTextIcon;
 
         return (
           <li key={document.document_id} className="group flex items-center gap-3 py-2.5">
@@ -140,7 +155,7 @@ async function LibraryContent() {
                 {document.title}
               </p>
               <p className="mt-0.5 truncate text-[12px] text-neutral-500">
-                {isNote ? "Note" : isImage ? "Image" : "PDF"} ·{" "}
+                {kind} ·{" "}
                 {chunkCount.toLocaleString("en-US")} chunks ·{" "}
                 {dateFormatter.format(new Date(document.created_at))}
               </p>

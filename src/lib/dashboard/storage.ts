@@ -18,6 +18,32 @@ export function workspaceStorageKey(userId: string): string {
   return `memex.workspace.v2:${userId}`;
 }
 
+const TRUNCATION_NOTICE = "\n\n… Preview shortened. The full text is in your library.";
+
+/** Shorten a cached note body, marking that the rest lives in the library. */
+export function capNoteBody(body: string, maxChars: number): string {
+  if (body.length <= maxChars) {
+    return body;
+  }
+
+  return body.slice(0, Math.max(0, maxChars - TRUNCATION_NOTICE.length)).trimEnd() +
+    TRUNCATION_NOTICE;
+}
+
+/** JSON for localStorage with every note body capped at `maxBodyChars`. */
+export function serializeWorkspace(
+  workspace: StoredWorkspace,
+  maxBodyChars: number,
+): string {
+  return JSON.stringify({
+    ...workspace,
+    notes: workspace.notes.map((note) => ({
+      ...note,
+      body: capNoteBody(note.body, maxBodyChars),
+    })),
+  });
+}
+
 export type StoredWorkspace = {
   notes: Note[];
   trails: Trail[];

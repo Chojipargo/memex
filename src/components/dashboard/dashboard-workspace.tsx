@@ -61,10 +61,15 @@ import {
 } from "@/lib/dashboard/data";
 import {
   LEGACY_WORKSPACE_STORAGE_KEY,
+  capNoteBody,
   readStoredWorkspace,
+  serializeWorkspace,
   workspaceStorageKey,
 } from "@/lib/dashboard/storage";
-import { LOCAL_NOTE_BODY_MAX_CHARS } from "@/lib/ingestion/constants";
+import {
+  LOCAL_NOTE_BODY_COMPACT_CHARS,
+  LOCAL_NOTE_BODY_MAX_CHARS,
+} from "@/lib/ingestion/constants";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { postTrailQuestion, type TrailApi } from "@/lib/trails/api";
 import {
@@ -184,6 +189,7 @@ export function DashboardWorkspace({
   const [hydrated, setHydrated] = useState(false);
   // Null until the signed-in user is known; nothing is read or written without it.
   const [storageKey, setStorageKey] = useState<string | null>(null);
+  const storageWarnedRef = useRef(false);
   const [overlay, setOverlay] = useState<Overlay>(null);
   const [uploadTab, setUploadTab] = useState<UploadTab>("pdf");
   const [uploadDraft, setUploadDraft] = useState<{
@@ -279,15 +285,33 @@ export function DashboardWorkspace({
       return;
     }
 
-    try {
-      window.localStorage.setItem(
-        storageKey,
-        JSON.stringify({ notes, trails, activeTrailId }),
-      );
-    } catch {
-      // Storage may be unavailable in private or restricted contexts.
+    const workspace = { notes, trails, activeTrailId };
+
+    // Full previews first; if the browser quota is exhausted, keep the
+    // workspace with shorter previews rather than silently saving nothing.
+    for (const maxBodyChars of [
+      LOCAL_NOTE_BODY_MAX_CHARS,
+      LOCAL_NOTE_BODY_COMPACT_CHARS,
+    ]) {
+      try {
+        window.localStorage.setItem(
+          storageKey,
+          serializeWorkspace(workspace, maxBodyChars),
+        );
+        return;
+      } catch {
+        // Quota exceeded, or storage unavailable; try the compact form.
+      }
     }
-  }, [activeTrailId, hydrated, notes, storageKey, trails]);
+
+    if (!storageWarnedRef.current) {
+      storageWarnedRef.current = true;
+      notify(
+        "This browser's storage is full, so recent workspace changes aren't saved locally. Your documents and trails are still saved to your account.",
+        7000,
+      );
+    }
+  }, [activeTrailId, hydrated, notes, notify, storageKey, trails]);
 
   const selectedTrail = selectedTrailId
     ? (trails.find((trail) => trail.id === selectedTrailId) ?? null)
@@ -674,7 +698,7 @@ export function DashboardWorkspace({
   ]);
 
   const handleNoteCreated = (created: NoteCreated) => {
-    const content = created.content.slice(0, LOCAL_NOTE_BODY_MAX_CHARS);
+    const content = capNoteBody(created.content, LOCAL_NOTE_BODY_MAX_CHARS);
     const excerptText = content.replace(/\s+/g, " ").trim();
     const excerpt =
       excerptText.slice(0, 170) + (excerptText.length > 170 ? "…" : "");

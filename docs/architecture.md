@@ -64,7 +64,14 @@ PowerPoint decks are converted to note text in the browser (`src/lib/documents/p
 
 ### Web sources (`src/lib/rag`)
 
-`web.ts` calls Tavily search (or extract, for a pasted URL) and fetches direct URLs with manual redirect handling. `url.ts` canonicalizes URLs and blocks localhost and private-network addresses, so a redirect can't reach internal services. `ingest.ts` chunks and embeds the page text and saves it as a `source_kind = 'web'` document, deduplicated by a hash of the canonical URL, so later questions can find it without going back to the web.
+`web.ts` calls Tavily search (or extract, for a pasted URL). When Tavily is unavailable or can't read a pasted URL, the server fetches it directly, with two layers of protection against reaching internal services:
+
+- `url.ts` rejects non-public hosts syntactically: private, loopback, link-local, CGNAT, multicast, and reserved IPv4 ranges in any spelling the URL parser accepts (decimal, hex, octal); IPv6 forms including `::`, `::1`, IPv4-mapped, NAT64, and 6to4 addresses that embed a private IPv4; single-label names; and local suffixes such as `.localhost`, `.local`, and `.internal` (trailing dots included).
+- `safe-fetch.ts` replaces the socket's DNS lookup with one that rejects the host if any resolved address is non-public, and connects to the checked address. That covers public domains that point at private IPs and DNS rebinding. Redirects are followed by hand and every hop is checked again. Bodies are capped at 2 MB after decompression.
+
+`ingest.ts` chunks and embeds the page text and saves it as a `source_kind = 'web'` document, deduplicated by a hash of the canonical URL, so later questions can find it without going back to the web. Every web passage is scored by its real cosine similarity to the question; for a page saved earlier, its stored chunks are re-scored and the best matches used.
+
+Web research gets its own budget of up to 20 seconds, carved out of the route deadline while keeping 18 seconds for generation. Tavily calls, direct fetches, and embeddings all use that budget, so a slow URL produces a clear "ran out of time" error instead of the platform killing the request.
 
 ## Trail generation
 
@@ -76,7 +83,7 @@ Body: `{ "question": string, "mode"?: "auto" | "research", "url"?: string }`.
 
 1. Embeds the question (`RETRIEVAL_QUERY`) and retrieves the top 30 chunks with `match_documents`.
 2. **Auto mode:** if the best similarity is at least `TRAIL_COVERAGE_THRESHOLD` (default `0.6`), it builds from the library alone. Gemini scores unrelated text around 0.45–0.52 and on-topic text around 0.65+, so the threshold must stay above that noise floor.
-3. Otherwise, or in **research mode**, it researches the web and combines the results: up to 70% of the 30 candidate slots go to web passages when library passages also matched, so hybrid trails stay mixed.
+3. Otherwise, or in **research mode**, it researches the web. Only library passages that clear the coverage threshold are blended in (so an automatic fallback is web-only, and research mode keeps your genuinely relevant passages). Web and library passages are ranked together by similarity, and the top 30 go to the model. A trail is labelled `Hybrid` only when the candidates really mix both.
 4. Claude (`src/lib/trails/generate.ts`) receives the candidates, each labelled with its source and treated as untrusted data, and returns structured JSON for 3–8 ordered steps: chunk id, note on why it follows, gist, and key quote.
 5. The server validates the response: unknown and duplicate chunk ids are dropped, notes are capped at 280 characters, and a response with fewer than 3 usable steps is retried once before returning `502`. If the main model is overloaded (429/5xx), the fallback model is used.
 6. `create_generated_trail` saves the trail and steps atomically after checking that every cited chunk belongs to the caller.
@@ -90,7 +97,7 @@ Body: `{ "question": string }` (3–500 characters).
 - an **anchored** search on the follow-up plus the last step's note and excerpt, so the continuation stays connected to where the trail ends;
 - a **direct** search on the follow-up alone.
 
-Coverage is judged on the direct search only. The anchored query embeds a passage that is already in the library, so its neighbours always score highly and would otherwise hide that the library knows nothing about the follow-up. When the library doesn't cover it, the web search query includes the trail title for context. Claude then writes 2–4 steps whose first note bridges from the current last step, and `append_generated_trail_steps` appends them under an advisory lock on the trail.
+Coverage is judged on the direct search only. The anchored query embeds a passage that is already in the library, so its neighbours always score highly and would otherwise hide that the library knows nothing about the follow-up. When the library doesn't cover it, the web search query includes the trail title for context, and passages are scored against the follow-up itself. Claude then writes 2–4 steps whose first note bridges from the current last step, and `append_generated_trail_steps` appends them under an advisory lock on the trail.
 
 ### Streaming
 
@@ -115,6 +122,7 @@ Migrations in `supabase/migrations/`, applied in order:
 | `20261110090000_append_trail_steps.sql` | `append_generated_trail_steps` |
 | `20261110120000_trail_step_digest.sql` | `gist`, `quote_start`, `quote_end` on steps; `get_chunk_neighbors` |
 | `20261111120000_hybrid_rag.sql` | Source provenance columns on `documents`; `match_documents` |
+| `20261113120000_match_documents_recall.sql` | Wider (`ef_search` 400) and, on pgvector 0.8+, iterative HNSW scans in `match_documents`, so filtering to the caller's rows doesn't starve results when many users share the index |
 
 Every table has owner-scoped RLS (`user_id = auth.uid()`, or through the owning document for `chunks`). The RPC functions are `security invoker` and check ownership of the trail and every cited chunk themselves.
 
@@ -122,7 +130,7 @@ If you change `EMBEDDING_DIMENSIONS`, update `vector(1536)` in the migrations an
 
 ## Client workspace
 
-The dashboard (`src/components/dashboard/dashboard-workspace.tsx`) keeps notes and trails in React state and caches them in `localStorage` under `memex.workspace.v2:<user-id>`, so each account on a shared browser has its own cache. The cache is only read after the signed-in user is confirmed with Supabase. Generated trails are always reloadable from `GET /api/trails`.
+The dashboard (`src/components/dashboard/dashboard-workspace.tsx`) keeps notes and trails in React state and caches them in `localStorage` under `memex.workspace.v2:<user-id>`, so each account on a shared browser has its own cache. The cache is only read after the signed-in user is confirmed with Supabase. Note and document bodies are cached as previews of up to 20,000 characters (the full text is in the library); if the browser's storage quota is still exceeded, the workspace is saved with 2,000-character previews, and the user is told if even that fails. Generated trails are always reloadable from `GET /api/trails`.
 
 ## Auth and routing
 

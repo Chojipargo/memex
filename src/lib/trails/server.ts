@@ -215,28 +215,33 @@ export function parseMatchedChunks(value: unknown): MatchedChunk[] | null {
   return chunks;
 }
 
-/**
- * Embed a retrieval query and return the user's closest chunks. Chunk ids in
- * `excludeChunkIds` are removed after retrieval, so the RPC is asked for extra
- * rows to keep roughly `count` candidates available.
- */
-export async function findCandidates(
-  supabase: ServerSupabase,
-  query: string,
-  count = 30,
-  excludeChunkIds: ReadonlySet<number> = new Set(),
-): Promise<MatchedChunk[]> {
-  const [queryEmbedding] = await embedTexts([query], "RETRIEVAL_QUERY", {
+/** Embed retrieval queries (questions, not documents) in one request. */
+export async function embedQueries(queries: string[]): Promise<number[][]> {
+  const embeddings = await embedTexts(queries, "RETRIEVAL_QUERY", {
     timeoutMs: TRAIL_EMBEDDING_TIMEOUT_MS,
     maxAttempts: TRAIL_EMBEDDING_MAX_ATTEMPTS,
   });
 
-  if (!queryEmbedding) {
+  if (embeddings.length !== queries.length || embeddings.some((vector) => !vector)) {
     throw new EmbeddingError(
       "The embedding provider returned no vector for this question.",
     );
   }
 
+  return embeddings;
+}
+
+/**
+ * Return the user's chunks closest to an embedded query. Chunk ids in
+ * `excludeChunkIds` are removed after retrieval, so the RPC is asked for extra
+ * rows to keep roughly `count` candidates available.
+ */
+export async function matchCandidates(
+  supabase: ServerSupabase,
+  queryEmbedding: number[],
+  count = 30,
+  excludeChunkIds: ReadonlySet<number> = new Set(),
+): Promise<MatchedChunk[]> {
   const match = await supabase.rpc("match_documents", {
     query_embedding: JSON.stringify(queryEmbedding),
     match_count: Math.min(100, count + excludeChunkIds.size),
@@ -262,6 +267,21 @@ export async function findCandidates(
   return candidates
     .filter((candidate) => !excludeChunkIds.has(candidate.chunkId))
     .slice(0, count);
+}
+
+/** Cosine similarity of two embeddings (Gemini vectors are L2-normalized). */
+export function cosineSimilarity(a: ReadonlyArray<number>, b: ReadonlyArray<number>): number {
+  let dot = 0;
+  let normA = 0;
+  let normB = 0;
+
+  for (let index = 0; index < Math.min(a.length, b.length); index += 1) {
+    dot += a[index] * b[index];
+    normA += a[index] * a[index];
+    normB += b[index] * b[index];
+  }
+
+  return normA > 0 && normB > 0 ? dot / Math.sqrt(normA * normB) : 0;
 }
 
 /** True when the best candidate is similar enough to be worth an LLM call. */
