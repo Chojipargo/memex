@@ -125,6 +125,7 @@ Migrations in `supabase/migrations/`, applied in order:
 | `20261113120000_match_documents_recall.sql` | Wider (`ef_search` 400) and, on pgvector 0.8+, iterative HNSW scans in `match_documents`, so filtering to the caller's rows doesn't starve results when many users share the index |
 | `20261113150000_published_trails.sql` | `published_trails` (public trail snapshots), `published_trail_learners`, and the `publish_trail` / `unpublish_trail` / `get_trail_publication` / `record_trail_learner` functions |
 | `20261114090000_associative_links.sql` | `links` table; `link_id` and `annotation` on `trail_steps`; converts existing trails into links; `link_trail_steps`, `create_user_link`, `record_link_traversal`, `get_passage_backlinks` |
+| `20261114120000_trail_editing.sql` | `parent_trail_id`, `branch_from_step_id`, `updated_at` on `trails`; `rewrite_trail` and `start_side_trail`; drops the retired `trail_nodes` table and its functions |
 
 Every private table has owner-scoped RLS (`user_id = auth.uid()`, or through the owning document for `chunks`). The RPC functions are `security invoker` and check ownership of the trail and every cited chunk themselves. The exception is published trails (below).
 
@@ -140,6 +141,21 @@ A trail is a chain of passages joined by links: every `trail_steps` row after th
 - `GET /api/chunks/search?q=`: semantic search over the caller's passages, used to pick a link target.
 
 The passage drawer shows these in its **Also on these trails / Tied to these passages** panel.
+
+## Editing trails and side trails
+
+Every insert, drop, and reorder is a new order of passages applied by `rewrite_trail`, which:
+
+- refuses the edit if the trail changed since the reader loaded it (`expectedChunkIds`, returned as `409`);
+- keeps the gist, quote, and annotation of every step that stays, and deletes dropped steps (their links remain, since other trails may use them);
+- gives every step after the first the link from the step before it, reusing an existing link for the pair, and requires a reason for any pair that has none yet.
+
+Edits are previewed first (`POST /api/trails/[id]/rewrite/preview` with the new `chunkIds`). The preview lists each connection the edit would create, with the existing link's reason or, where none exists, a reason Claude suggests (`suggestLinkReasons` in `src/lib/trails/generate.ts`). The reader can edit any reason before applying with `POST /api/trails/[id]/rewrite`. A suggestion kept unchanged is saved as `claude_accepted`, and anything the reader wrote or changed as `user`. Unaccepted suggestions are never stored.
+
+- `PATCH /api/trails/[id]/steps/[position]` sets or clears the reader's annotation on a step.
+- `POST /api/trails/[id]/side-trails` with `{ position }` starts a new trail at that step (`start_side_trail`), recording `parent_trail_id` and `branch_from_step_id`. The dashboard opens it with the follow-up box focused.
+
+Hand-built, document-level trails (`trail_nodes`) and the demo notes and trails are gone. The local cache keeps only generated trails.
 
 ## Public trails (Explore)
 

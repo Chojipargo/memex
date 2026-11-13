@@ -27,7 +27,6 @@ export type IngestedDocument = {
   dimensions: number;
   batchSize: number;
   extractionMethod: ExtractionMethod;
-  trailLinked?: boolean;
 };
 
 export type DocumentCreated = {
@@ -39,5 +38,4 @@ export type DocumentCreated = {
   sourceName?: string;
   pageCount?: number;
   extraction?: ExtractionMethod | "note";
-  trailId?: string | null;
 };

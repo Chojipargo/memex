@@ -452,9 +452,6 @@ export async function POST(request: Request) {
   const extractionMethod =
     readExtractionMethod(formData.get("extractionMethod")) ??
     (usedServerPdfExtraction ? "text-layer" : "ocr");
-  const trailIdRaw = formData.get("trailId");
-  const trailId =
-    typeof trailIdRaw === "string" ? trailIdRaw.trim().slice(0, 200) : "";
 
   const chunks = chunkPages(textPages as SourcePage[]);
 
@@ -571,29 +568,6 @@ export async function POST(request: Request) {
       }
     }
 
-    // Step 4: link the document to the current trail. The app keeps its local
-    // trail immediately; this mirrors the ordered node in Postgres so the same
-    // sequence survives across devices.
-    let trailLinked = false;
-
-    if (trailId) {
-      const { error: linkError } = await supabase.rpc(
-        "append_document_to_trail",
-        {
-          p_trail_id: trailId,
-          p_document_id: documentId,
-          p_relation:
-            extractionMethod === "ocr" ? "OCR source" : "Document source",
-        },
-      );
-
-      if (linkError) {
-        console.error("[documents/upload] trail link failed", linkError);
-      } else {
-        trailLinked = true;
-      }
-    }
-
     return NextResponse.json(
       {
         document: {
@@ -607,7 +581,6 @@ export async function POST(request: Request) {
           dimensions: EMBEDDING_DIMENSIONS,
           batchSize: EMBEDDING_BATCH_SIZE,
           extractionMethod,
-          trailLinked,
         },
       },
       { status: 201 },

@@ -317,7 +317,18 @@ function parseTrailHeader(value: unknown): TrailHeader | null {
     return null;
   }
 
-  return { id, question, title, model, createdAt };
+  const parent = asRecord(firstRelationship(record.parent));
+
+  return {
+    id,
+    question,
+    title,
+    model,
+    createdAt,
+    updatedAt: asNonEmptyString(record.updated_at),
+    parentTrailId: asNonEmptyString(record.parent_trail_id),
+    parentTitle: asNonEmptyString(parent?.title),
+  };
 }
 
 function parseTrailSteps(value: unknown): TrailApiStep[] | null {
@@ -411,7 +422,9 @@ export async function loadTrail(
 
   const trailResult = await supabase
     .from("trails")
-    .select("id, question, title, model, created_at")
+    .select(
+      "id, question, title, model, created_at, updated_at, parent_trail_id, parent:parent_trail_id(title)",
+    )
     .eq("id", trailId)
     .eq("user_id", userId)
     .maybeSingle();

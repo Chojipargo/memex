@@ -9,6 +9,13 @@ import {
   ProvenancePill,
 } from "@/components/dashboard/provenance-pill";
 import { ShareTrail } from "@/components/dashboard/share-trail";
+import {
+  InsertSlot,
+  nodeChunkId,
+  RewriteReview,
+  StepAnnotation,
+  useTrailRewrite,
+} from "@/components/dashboard/trail-editor";
 import { TrailStepCard } from "@/components/dashboard/trail-step-card";
 import { CenteredStage, DrawerFrame } from "@/components/dashboard/overlay";
 import {
@@ -21,7 +28,7 @@ import {
   SparkIcon,
   TrailsIcon,
 } from "@/components/ui/dashboard-icons";
-import type { Association, Note, Trail, TrailNode } from "@/lib/dashboard/data";
+import type { Association, Note, Trail } from "@/lib/dashboard/data";
 import type { TrailApi } from "@/lib/trails/api";
 import { apiTrailIdOf, chunkIdOf } from "@/lib/trails/to-workspace";
 
@@ -49,7 +56,10 @@ export function TrailDetailDialog({
   onResume,
   onToggleSave,
   onOpenNote,
-  onBranch,
+  onStartSideTrail,
+  onTrailEdited,
+  onAnnotationSaved,
+  onOpenParent,
   onTrailContinued,
   onUploadSource,
   onNewQuestion,
@@ -66,7 +76,13 @@ export function TrailDetailDialog({
   onResume: (trail: Trail) => void;
   onToggleSave: (trail: Trail) => void;
   onOpenNote: (note: Note, trailId?: string) => void;
-  onBranch: (node: TrailNode) => void;
+  /** Start a side trail at a 1-based step position. */
+  onStartSideTrail: (apiTrailId: string, position: number) => void;
+  /** An insert, drop, or reorder was saved. */
+  onTrailEdited: (trail: TrailApi, focusIndex: number) => void;
+  onAnnotationSaved: (trailId: string, index: number, annotation: string | null) => void;
+  /** Open the trail a side trail branched from. */
+  onOpenParent: (apiTrailId: string) => void;
   onTrailContinued: (trail: TrailApi) => void;
   onUploadSource: () => void;
   onOpenCitation: (note: Note) => void;
@@ -88,6 +104,18 @@ export function TrailDetailDialog({
   const noteButtonRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const previousTrailId = useRef<string | null>(null);
   const trailId = trail?.id ?? null;
+  // Edit mode is per trail, so moving to another trail leaves it.
+  const [editingTrailId, setEditingTrailId] = useState<string | null>(null);
+  const editing = trailId !== null && editingTrailId === trailId;
+  const chunkIds = (trail?.nodes ?? [])
+    .map(nodeChunkId)
+    .filter((id): id is number => id !== null);
+  const rewrite = useTrailRewrite({
+    apiTrailId: apiTrailId ?? "",
+    chunkIds,
+    onSaved: onTrailEdited,
+  });
+  const editBusy = rewrite.busy || rewrite.state.kind === "review";
 
   useEffect(() => {
     if (!trailId) {
@@ -196,6 +224,16 @@ export function TrailDetailDialog({
               <p className="mt-2 max-w-xl text-[14.5px] leading-6 text-mist">
                 {trail.description}
               </p>
+              {trail.parent ? (
+                <button
+                  type="button"
+                  onClick={() => onOpenParent(trail.parent!.apiTrailId)}
+                  className="mt-2 inline-flex items-center gap-1.5 text-[13px] text-neutral-400 underline decoration-white/15 underline-offset-4 transition hover:text-white"
+                >
+                  <BranchIcon className="size-3.5" />
+                  Side trail of “{trail.parent.title}”
+                </button>
+              ) : null}
             </div>
 
             <button
@@ -223,10 +261,41 @@ export function TrailDetailDialog({
                   {trail.nodes.length}
                 </span>
               </div>
-              <p className="text-[13px] text-neutral-500">
-                {trail.nodes.length} notes · {trail.updatedAt}
-              </p>
+              <div className="flex items-center gap-3">
+                <p className="text-[13px] text-neutral-500">
+                  {trail.nodes.length} notes · {trail.updatedAt}
+                </p>
+                {apiTrailId && chunkIds.length === trail.nodes.length ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      rewrite.cancel();
+                      setEditingTrailId(editing ? null : trail.id);
+                    }}
+                    aria-pressed={editing}
+                    className={`rounded-lg border px-2.5 py-1 text-[12.5px] font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 ${
+                      editing
+                        ? "border-white/25 bg-white/[0.1] text-white"
+                        : "border-white/[0.09] bg-white/[0.03] text-neutral-300 hover:border-white/15 hover:text-white"
+                    }`}
+                  >
+                    {editing ? "Done editing" : "Edit trail"}
+                  </button>
+                ) : null}
+              </div>
             </div>
+
+            {editing ? <RewriteReview rewrite={rewrite} /> : null}
+            {editing ? (
+              <InsertSlot
+                index={0}
+                chunkIds={chunkIds}
+                disabled={editBusy}
+                onInsert={(order, index) =>
+                  void rewrite.propose(order, index, "Insert a passage at the start")
+                }
+              />
+            ) : null}
 
             {trail.nodes.length > 1 ? (
               <p className="mb-3 flex flex-wrap items-center gap-1.5 text-[12px] text-neutral-500">
@@ -307,15 +376,68 @@ export function TrailDetailDialog({
                             {displayTitle(node.label)}
                           </h3>
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => onBranch(node)}
-                          className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-white/[0.12] bg-white/[0.04] px-3.5 py-2 text-[14px] font-medium text-neutral-200 transition hover:border-white/25 hover:bg-white/[0.09] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
-                          aria-label={`Branch from ${node.label}`}
-                        >
-                          <BranchIcon className="size-4" />
-                          Branch
-                        </button>
+                        {apiTrailId ? (
+                          editing ? (
+                            <div className="flex shrink-0 items-center gap-1">
+                              <button
+                                type="button"
+                                disabled={editBusy || index === 0}
+                                onClick={() => {
+                                  const order = [...chunkIds];
+                                  [order[index - 1], order[index]] = [order[index], order[index - 1]];
+                                  void rewrite.propose(order, index - 1, `Move step ${index + 1} up`);
+                                }}
+                                aria-label={`Move step ${index + 1} up`}
+                                title="Move up"
+                                className="grid size-8 place-items-center rounded-lg border border-white/[0.1] bg-white/[0.04] text-neutral-300 transition hover:text-white disabled:opacity-30"
+                              >
+                                <ArrowLeftIcon className="size-3.5 rotate-90" />
+                              </button>
+                              <button
+                                type="button"
+                                disabled={editBusy || index === trail.nodes.length - 1}
+                                onClick={() => {
+                                  const order = [...chunkIds];
+                                  [order[index], order[index + 1]] = [order[index + 1], order[index]];
+                                  void rewrite.propose(order, index + 1, `Move step ${index + 1} down`);
+                                }}
+                                aria-label={`Move step ${index + 1} down`}
+                                title="Move down"
+                                className="grid size-8 place-items-center rounded-lg border border-white/[0.1] bg-white/[0.04] text-neutral-300 transition hover:text-white disabled:opacity-30"
+                              >
+                                <ArrowRightIcon className="size-3.5 rotate-90" />
+                              </button>
+                              <button
+                                type="button"
+                                disabled={editBusy || trail.nodes.length <= 1}
+                                onClick={() => {
+                                  const order = chunkIds.filter((_, position) => position !== index);
+                                  void rewrite.propose(
+                                    order,
+                                    Math.min(index, order.length - 1),
+                                    `Drop step ${index + 1}`,
+                                  );
+                                }}
+                                aria-label={`Drop step ${index + 1}`}
+                                title="Drop this step"
+                                className="grid size-8 place-items-center rounded-lg border border-white/[0.1] bg-white/[0.04] text-neutral-300 transition hover:text-white disabled:opacity-30"
+                              >
+                                <CloseIcon className="size-3.5" />
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => onStartSideTrail(apiTrailId, index + 1)}
+                              className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-white/[0.12] bg-white/[0.04] px-3 py-2 text-[13.5px] font-medium text-neutral-200 transition hover:border-white/25 hover:bg-white/[0.09] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+                              aria-label={`Start a side trail from ${node.label}`}
+                              title="Start a new trail from this passage"
+                            >
+                              <BranchIcon className="size-4" />
+                              Side trail
+                            </button>
+                          )
+                        ) : null}
                       </div>
                       {node.relation ? (
                         <div className="mt-3 border-l-2 border-white/15 pl-3">
@@ -339,6 +461,34 @@ export function TrailDetailDialog({
                           onOpenCitation={onOpenCitation}
                         />
                       ) : null}
+                      {apiTrailId ? (
+                        <StepAnnotation
+                          key={`${node.id}:${node.annotation ?? ""}`}
+                          apiTrailId={apiTrailId}
+                          position={index + 1}
+                          annotation={node.annotation}
+                          editing={editing}
+                          onSaved={(annotation) =>
+                            onAnnotationSaved(trail.id, index, annotation)
+                          }
+                        />
+                      ) : null}
+                      {editing ? (
+                        <div className="mt-3 -mb-1">
+                          <InsertSlot
+                            index={index + 1}
+                            chunkIds={chunkIds}
+                            disabled={editBusy}
+                            onInsert={(order, insertAt) =>
+                              void rewrite.propose(
+                                order,
+                                insertAt,
+                                `Insert a passage after step ${index + 1}`,
+                              )
+                            }
+                          />
+                        </div>
+                      ) : null}
                     </div>
                   </motion.li>
                 );
@@ -349,6 +499,8 @@ export function TrailDetailDialog({
               <ContinueTrail
                 key={trail.id}
                 apiTrailId={apiTrailId}
+                // A new side trail is waiting for its first follow-up.
+                autoFocus={Boolean(trail.parent) && trail.nodes.length === 1}
                 onUploadSource={onUploadSource}
                 onStartNewTrail={onNewQuestion}
                 onContinued={(updated) => {
@@ -425,7 +577,8 @@ export function NoteDetailDrawer({
   onPreviousNote: () => void;
   onNextNote: () => void;
   onTogglePin: (note: Note) => void;
-  onBranch: (note: Note) => void;
+  /** Start a side trail at this note's step; omitted when it isn't on a trail. */
+  onBranch?: () => void;
   onOpenCitation: (note: Note) => void;
 }) {
   const noteMap = new Map(notes.map((item) => [item.id, item]));
@@ -644,14 +797,16 @@ export function NoteDetailDrawer({
               <PinIcon className="size-3.5" />
               {note.pinned ? "Pinned" : "Pin note"}
             </button>
-            <button
-              type="button"
-              onClick={() => onBranch(note)}
-              className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-[13.5px] font-medium text-neutral-950 transition hover:bg-neutral-200"
-            >
-              <BranchIcon className="size-3.5" />
-              Branch from here
-            </button>
+            {onBranch ? (
+              <button
+                type="button"
+                onClick={onBranch}
+                className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-[13.5px] font-medium text-neutral-950 transition hover:bg-neutral-200"
+              >
+                <BranchIcon className="size-3.5" />
+                Start a side trail here
+              </button>
+            ) : null}
           </div>
         </motion.div>
       ) : null}

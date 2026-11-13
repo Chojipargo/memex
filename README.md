@@ -23,6 +23,7 @@ flowchart LR
 - **Library first, web when needed.** Questions are answered from your library when it has strong matches. Otherwise memex searches the web (Tavily), stores the pages as sources, and labels every step `In Your Library`, `Web Synthesized`, or `Hybrid`.
 - **Links, not just lists.** Every connection between two passages is a saved link with a reason, shared by every trail that walks it. Open any passage to see what it's tied to and which trails pass through it, follow a link, or link it to another passage yourself.
 - **Learn from others.** Share a trail on **Explore** (`/explore`) and browse the most-followed public trails. Each public step shows its note, summary, key quote, and source title, never your full private passages. "Ask in my library" rebuilds the same question from your own sources.
+- **Edit the path.** Insert a passage anywhere, drop or reorder steps, and add your own notes. Claude suggests why each new connection holds, and you can reword it before saving. Start a side trail from any step to follow a tangent without losing the original.
 - **Keep going.** Ask a follow-up to extend a trail, branch a new trail from any step, or revisit earlier trails from the trails drawer and command palette (`Ctrl/⌘ K`).
 - **Private by default.** Every table, file, and search is scoped to the signed-in user with Postgres row-level security. No `service_role` key is used anywhere.
 
@@ -117,6 +118,10 @@ All routes require a signed-in session and return JSON errors (`401` when signed
 | `POST /api/trails` | Build a trail. Body: `{ question, mode?: "auto" \| "research", url? }`. Streams NDJSON progress, then the trail |
 | `GET /api/trails` | Your 50 most recent trails |
 | `GET/POST/DELETE /api/trails/:id/publish` | Check, publish (or refresh), or unpublish a trail on Explore |
+| `POST /api/trails/:id/rewrite/preview` | Preview an insert, drop, or reorder. Body: `{ chunkIds }`. Returns new connections with existing or Claude-suggested reasons |
+| `POST /api/trails/:id/rewrite` | Apply it. Body: `{ expectedChunkIds, steps: [{ chunkId, reason?, reasonOrigin? }] }` |
+| `PATCH /api/trails/:id/steps/:position` | Set or clear your annotation on a step |
+| `POST /api/trails/:id/side-trails` | Start a side trail at a step. Body: `{ position }` |
 | `GET /api/chunks/:id/backlinks` | Links tied to a passage and the trails that pass through it |
 | `POST /api/links` | Link two of your passages by hand. Body: `{ sourceChunkId, targetChunkId, reason }` |
 | `POST /api/links/:id/traverse` | Record that a link was followed |

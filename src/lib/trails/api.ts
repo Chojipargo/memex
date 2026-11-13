@@ -39,6 +39,11 @@ export type TrailApi = {
   title: string;
   model: string;
   createdAt: string;
+  /** Last change to the steps or annotations. Older responses omit it. */
+  updatedAt?: string | null;
+  /** For a side trail: the trail it branched from. */
+  parentTrailId?: string | null;
+  parentTitle?: string | null;
   steps: TrailApiStep[];
 };
 
@@ -203,6 +208,9 @@ export function parseTrailApiResponse(value: unknown): TrailApi | null {
   const title = asNonEmptyString(trail.title);
   const model = asNonEmptyString(trail.model);
   const createdAt = asNonEmptyString(trail.createdAt);
+  const updatedAt = asNullableString(trail.updatedAt);
+  const parentTrailId = asNullableString(trail.parentTrailId);
+  const parentTitle = asNullableString(trail.parentTitle);
   const rawSteps = trail.steps;
 
   if (
@@ -211,6 +219,9 @@ export function parseTrailApiResponse(value: unknown): TrailApi | null {
     !title ||
     !model ||
     !createdAt ||
+    updatedAt === undefined ||
+    parentTrailId === undefined ||
+    parentTitle === undefined ||
     !Array.isArray(rawSteps)
   ) {
     return null;
@@ -228,7 +239,17 @@ export function parseTrailApiResponse(value: unknown): TrailApi | null {
     steps.push(step);
   }
 
-  return { id, question, title, model, createdAt, steps };
+  return {
+    id,
+    question,
+    title,
+    model,
+    createdAt,
+    updatedAt,
+    parentTrailId,
+    parentTitle,
+    steps,
+  };
 }
 
 export function readApiError(value: unknown): string | null {
