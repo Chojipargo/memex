@@ -1,238 +1,176 @@
 # memex.ai
 
-A dark, glassmorphic workspace for **memex.ai** — Supabase Auth over an original field of flowing lines, plus a PDF ingestion pipeline that extracts, chunks, embeds, and indexes documents with pgvector.
+**Ask questions of everything you've read, and follow the answer as a trail of cited passages.**
 
-## Stack
+memex.ai is a research workspace inspired by Vannevar Bush's 1945 _memex_: a machine for recalling knowledge by association instead of by folder. You collect sources (PDFs, scans, slide decks, notes, web pages), ask a question, and get back a **trail**: an ordered path of passages from your own library, each with a verified quote, a short summary, and a note on why it leads to the next one. When your library doesn't cover a question, memex researches the web, saves what it finds, and blends it into the same trail with clear provenance.
 
-- **Next.js 16.4** (App Router, Turbopack, Cache Components)
-- **React 19.3** + **TypeScript**
-- **Tailwind CSS v4** (CSS-first tokens in `src/app/globals.css`)
-- **Supabase Auth + Storage + Postgres** via `@supabase/ssr`
-- **pgvector** for chunk embeddings
-- **unpdf** for server-side PDF text extraction
-- **gpt-tokenizer** (cl100k_base) for exact chunk sizing
-- **Gemini `gemini-embedding-001`** (1536 dimensions) for embeddings and **Claude `claude-sonnet-5-5`** for trail generation via `fetch`
-- **Tavily** for web research, with retrieved pages embedded into the same pgvector store
+```mermaid
+flowchart LR
+    A[Collect<br/>PDFs · images · decks · notes · URLs] --> B[Ask a question]
+    B --> C{Library covers it?}
+    C -- yes --> D[Trail from your library]
+    C -- no --> E[Research the web<br/>save sources]
+    E --> F[Hybrid trail<br/>library + web]
+    D --> G[Continue or branch the trail]
+    F --> G
+    G --> B
+```
 
-## Getting started
+## Features
+
+- **Bring your own sources.** Upload PDFs and images (scanned pages are OCR'd in your browser and shown for review first), import PowerPoint decks with speaker notes, write or paste notes, or point it at a URL.
+- **Trails, not chat.** Each answer is 3–8 ordered steps. Every step cites a real passage, shows a key quote that has been checked against the source text, gives a one-to-two sentence AI summary, and can expand to the full surrounding passage.
+- **Library first, web when needed.** Questions are answered from your library when it has strong matches. Otherwise memex searches the web (Tavily), stores the pages as sources, and labels every step `In Your Library`, `Web Synthesized`, or `Hybrid`.
+- **Keep going.** Ask a follow-up to extend a trail, branch a new trail from any step, or revisit earlier trails from the trails drawer and command palette (`Ctrl/⌘ K`).
+- **Private by default.** Every table, file, and search is scoped to the signed-in user with Postgres row-level security. No `service_role` key is used anywhere.
+
+## Tech stack
+
+| Layer | Choice |
+| --- | --- |
+| App | Next.js 16 (App Router, Turbopack, Cache Components), React 19, TypeScript |
+| Styling | Tailwind CSS v4, Framer Motion |
+| Auth, database, files | Supabase Auth, Postgres + pgvector, Storage (via `@supabase/ssr`) |
+| Embeddings | Gemini `gemini-embedding-001`, 1536 dimensions |
+| Trail writing | Claude `claude-sonnet-5-5`, falling back to `claude-haiku-5-5` when overloaded |
+| Web research | Tavily search and extract |
+| Document reading | pdf.js and Tesseract.js in the browser, `unpdf` on the server, `fflate` for `.pptx` |
+
+## Quick start
+
+**Prerequisites:** Node.js 20.9+, a [Supabase](https://supabase.com) project, a [Gemini API key](https://aistudio.google.com/app/apikey), and an [Anthropic API key](https://console.anthropic.com/settings/keys). A [Tavily key](https://tavily.com) is optional but needed for web research.
 
 ```bash
+git clone https://github.com/Chojipargo/memex.git
+cd memex
 npm install
-cp .env.example .env.local   # fill in the anon key, GEMINI_API_KEY, and ANTHROPIC_API_KEY
+cp .env.example .env.local     # then fill in the keys (see Configuration)
+npx supabase link --project-ref <your-project-ref>
+npx supabase db push           # applies everything in supabase/migrations
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) — it redirects to `/sign-in`.
+Open <http://localhost:3000>, create an account, upload a document, and ask a question about it.
 
-### Environment
+Without Supabase credentials the UI still renders, and auth, uploads, and trails show a setup message instead of crashing.
 
-```env
-NEXT_PUBLIC_SUPABASE_URL=https://sapiejhntzbhtiumvxty.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon/publishable key>
-GEMINI_API_KEY=<server-only embeddings key>
-ANTHROPIC_API_KEY=<server-only trail generation key>
-TAVILY_API_KEY=<server-only web research key>
+## Configuration
 
-# Optional; defaults shown
-# GEMINI_EMBEDDING_MODEL=gemini-embedding-001
-# EMBEDDING_DIMENSIONS=1536
-# CLAUDE_TRAIL_MODEL=claude-sonnet-5-5
-# CLAUDE_TRAIL_FALLBACK_MODEL=claude-haiku-5-5
-```
+All keys except the two `NEXT_PUBLIC_` values are **server-only**. Never expose them to the browser.
 
-The **anon key is public by design**. Never expose the database password, `service_role` key, `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, or `TAVILY_API_KEY` to the browser. If you need direct Postgres access, put the connection string in a server-only variable (see the commented `DATABASE_URL` in `.env.example`).
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | Yes | Supabase project URL (Project Settings → API) |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Supabase anon key. Public by design; access is enforced by RLS |
+| `GEMINI_API_KEY` | Yes | Embeddings for documents, notes, questions, and web pages |
+| `ANTHROPIC_API_KEY` | Yes | Writing trails and continuations |
+| `TAVILY_API_KEY` | For web research | Automatic web fallback and "Research the web". Library-only trails and pasted-URL extraction work without it |
+| `TRAIL_COVERAGE_THRESHOLD` | No (`0.6`) | How strong a library match must be before skipping the web. Raise it to research more often |
+| `CLAUDE_TRAIL_MODEL` | No (`claude-sonnet-5-5`) | Model that writes trails |
+| `CLAUDE_TRAIL_FALLBACK_MODEL` | No (`claude-haiku-5-5`) | Used when the main model is overloaded; `none` disables it |
+| `GEMINI_EMBEDDING_MODEL` | No (`gemini-embedding-001`) | Embedding model |
+| `EMBEDDING_DIMENSIONS` | No (`1536`) | Must match `vector(1536)` in the migrations; changing it means re-embedding everything |
 
-Claude has no embeddings API, so document, note, query, and web research embeddings stay on Gemini; Claude only writes trails. `TAVILY_API_KEY` is optional for library-only use and for direct URL extraction. Automatic fallback and topic-based manual research need it.
+> Supabase Auth uses the project URL and anon key, not the `postgresql://` connection string. That string is only for direct SQL clients; keep it in a server-only variable such as the commented `DATABASE_URL` in `.env.example`.
 
-> Supabase Auth uses the project URL + anon key, not the `postgresql://…` connection string. The connection string is only for direct SQL clients.
+### Supabase setup
 
-Without credentials the UI still renders; auth actions and uploads show a configuration notice instead of crashing.
+1. **Migrations:** `npx supabase db push` creates the tables, pgvector indexes, row-level security policies, RPC functions, and the private `documents` storage bucket (25 MB, PDF and image types). You can also paste the files in `supabase/migrations/` into the SQL editor in order.
+2. **Redirect URLs:** Authentication → URL Configuration → add `http://localhost:3000/auth/callback` and your production `/auth/callback`. Needed for OAuth and password-reset emails.
+3. **Google sign-in (optional):** Authentication → Providers → Google. Create a Google Cloud OAuth client whose redirect URI is `https://<your-project-ref>.supabase.co/auth/v1/callback`.
 
-### Supabase dashboard setup
+## What you can add
 
-1. **URL + anon key** — Project Settings → API.
-2. **Redirect URLs** — Authentication → URL Configuration → add:
-   - `http://localhost:3000/auth/callback`
-   - your production `/auth/callback`
-3. **Google** — Authentication → Providers → Google. Create a Google Cloud OAuth client with redirect URI:
-   `https://sapiejhntzbhtiumvxty.supabase.co/auth/v1/callback`
-4. **Apple** — Authentication → Providers → Apple. Requires an Apple Developer account (Services ID, Team ID, Key ID, `.p8` key).
+| Source | Where | How it's read |
+| --- | --- | --- |
+| PDF with a text layer | Upload → Upload document | Text read in the browser with pdf.js (server re-reads with `unpdf` as a fallback) |
+| Scanned PDF or image (PNG, JPEG, WebP, BMP) | Upload → Upload document | OCR in the browser with Tesseract; you review and edit the text before it's saved |
+| PowerPoint (`.pptx`) | Upload → Note or text → Import file | Slide text and speaker notes in slide order. Older `.ppt` files must be re-saved as `.pptx` |
+| Text or Markdown file | Upload → Note or text → Import file | Imported into the note editor |
+| Note | Upload → Note or text, or the hero's "Save as note" | Saved and embedded directly |
+| Web page or topic | Research the web (hero, header, or command palette) | Fetched through Tavily, chunked, embedded, and saved as a web source |
 
-## Document ingestion
+Everything is split into overlapping ~500–800 token chunks and embedded, so it can be found by meaning rather than keywords.
 
-Apply the migration once, either with the Supabase CLI or by pasting
-`supabase/migrations/20261109130000_documents_chunks.sql` into the SQL editor:
+## How it works
 
-```bash
-supabase init                 # once, if supabase/config.toml does not exist
-supabase link --project-ref sapiejhntzbhtiumvxty
-supabase db push
-```
+1. **Ingest.** Sources are chunked and embedded with Gemini, then stored in Postgres with pgvector, together with provenance (library or web, URL, domain, retrieval time).
+2. **Retrieve.** A question is embedded and matched against your chunks by cosine similarity.
+3. **Route.** If the best match clears `TRAIL_COVERAGE_THRESHOLD`, the trail is built from your library. Otherwise memex researches the web, saves the pages, and combines web and library passages.
+4. **Write.** Claude orders the strongest passages into a trail, writing for each step a short note on why it follows, a gist, and a key quote. Output is validated on the server: unknown or duplicate citations are dropped, and a quote that can't be found in its passage is removed rather than shown.
+5. **Save and stream.** The trail is saved atomically, and the UI shows live `searching → researching → weaving` progress while it's built.
 
-The migration:
+Follow-ups work the same way, but stay anchored to where the trail currently ends, and the library-or-web decision is made on the follow-up question itself.
 
-- enables the `vector` extension;
-- creates `documents` (`document_id` unique, owner-scoped `user_id`, title, storage path);
-- creates `chunks` (`document_id` FK, page, text, `vector(1536)` embedding);
-- adds an HNSW cosine index and RLS policies scoped through the owning document;
-- creates the private `documents` Storage bucket (25 MB limit, PDF MIME only) and per-user Storage policies.
+See [docs/architecture.md](docs/architecture.md) for the full pipeline, database schema, and API details.
 
-Then add `GEMINI_API_KEY` to `.env.local` and restart the dev server.
+## API
 
-### Pipeline
-
-`POST /api/documents/upload` accepts `multipart/form-data` with `file` (required) and `title` (optional, defaults to the file name). It runs these steps and rolls back the document row and stored PDF if any step fails:
-
-1. **Upload** — validates the PDF signature and size, stores the raw file at `<user-id>/<document-id>.pdf` in the private bucket, and inserts the `documents` row.
-2. **Extract** — `unpdf` reads the PDF page by page (`mergePages: false`). Encrypted or text-less PDFs return a 422.
-3. **Chunk** — sentence-aware chunks of 500–800 cl100k_base tokens with a 100-token overlap. Chunks may span pages; each chunk is attributed to the page contributing the most tokens. A final chunk of a short document can be under 500 tokens because there is nothing left to fill it.
-4. **Embed** — chunk text is embedded in batches of 64 with Gemini `gemini-embedding-001` (`RETRIEVAL_DOCUMENT`, 1536 dimensions) and retries for rate limits and transient failures. Vectors are L2-normalized for cosine search.
-5. **Index** — vectors are validated against the configured dimensions and inserted into `chunks` in batches of 100. Embeddings are generated before any chunk rows are written.
-
-The dashboard uploader shows upload progress, then extraction/embedding status; on success it refreshes the recent-documents list.
-
-> If you change `EMBEDDING_DIMENSIONS`, update `vector(1536)` in the migration and re-embed existing documents. `gemini-embedding-001` supports 128–3072 output dimensions; the default here is 1536.
-
-## Trail generation
-
-Add `ANTHROPIC_API_KEY` to `.env.local`, then apply the generated-trails migration after the ingestion migrations:
-
-```bash
-supabase db push
-```
-
-`supabase/migrations/20261109170000_generated_trails.sql` creates:
-
-- `trails` (`question`, `title`, `model`, owner-scoped `user_id`) and `trail_steps` (ordered citations into `chunks`, with a deferrable position constraint);
-- RLS policies and explicit authenticated grants on both tables;
-- `match_chunks(...)`, the original owner-scoped cosine search (kept for older code);
-- `create_generated_trail(...)`, which verifies every cited chunk belongs to the caller and inserts the trail and steps atomically.
-
-`supabase/migrations/20261111120000_hybrid_rag.sql` adds provenance (`source_kind`, `source_url`, `source_domain`, `source_provider`, `source_key`, `published_at`, `retrieved_at`) and `match_documents(...)`, which returns the same chunk fields plus that provenance.
-
-`POST /api/trails` accepts `{ "question": "...", "mode"?: "auto" | "research", "url"?: "https://…" }` and streams NDJSON events:
-
-1. **Embed the question** with Gemini `RETRIEVAL_QUERY` (ingestion and web research use `RETRIEVAL_DOCUMENT`).
-2. **Retrieve** the top 30 chunks from the user's library through `match_documents`.
-3. **Check coverage** — if the best cosine similarity is at least `TRAIL_COVERAGE_THRESHOLD` (default `0.6` in `src/lib/trails/generate.ts`, overridable via the `TRAIL_COVERAGE_THRESHOLD` env var; Gemini scores unrelated text around 0.45–0.52, so keep it above that), generate from the library alone.
-4. **Research the web** when coverage is low or `mode` is `research`. Tavily returns page text for each result (or extracts a supplied `url`); the text is chunked, embedded, and saved as `source_kind = 'web'` documents, deduped by a canonical URL hash. Later questions can retrieve those chunks locally.
-5. **Generate** 5–8 ordered steps with the Claude Messages API, structured JSON output, and retries on rate limits or transient failures. Each candidate is labelled `[web source: domain]` when applicable; the prompt treats every passage as untrusted data.
-6. **Validate** the JSON server-side: unknown chunk ids and duplicates are dropped, notes are trimmed to 280 characters, and a response with fewer than 3 usable steps is retried once before returning a 502.
-7. **Save atomically** through `create_generated_trail`, then return the full trail with provenance on every step.
-
-The route streams three status events (`searching`, `researching`, `weaving`) before the final `trail` or `error` event, so the UI shows real server phases instead of guessing with timers. A missing `TAVILY_API_KEY` only blocks web research; library-only trails still work.
-
-Generated trails are separate from the document-level `trail_nodes` used by hand-built workspace trails. A generated trail may cite several chunks from the same document.
-
-### Continuing a trail
-
-`supabase/migrations/20261110090000_append_trail_steps.sql` adds `append_generated_trail_steps(p_trail_id, p_steps)`. It is a security-invoker function that checks the caller owns the trail and every cited chunk, rejects passages already on the trail, takes a transaction-scoped advisory lock on the trail, and appends steps at `max(position) + n`. It returns the new step count.
-
-`POST /api/trails/[id]/continue` accepts `{ "question": "..." }` (3–500 characters). It embeds the follow-up together with the last step's note and excerpt, retrieves about 30 candidates that are not already on the trail, and asks Claude for 2–4 new steps whose first note bridges from the current last step. If local coverage is low, it runs the same automatic web fallback before generating. It streams the same progress events and returns the full updated trail.
-
-### Digestible steps
-
-`supabase/migrations/20261110120000_trail_step_digest.sql` adds `gist`, `quote_start`, and `quote_end` to `trail_steps`, teaches both trail RPCs to store them, and adds `get_chunk_neighbors(p_chunk_id)`.
-
-Each step now carries, from the same single generation or continue call:
-
-- **Key quote**: 1–3 sentences the model copies verbatim. `locateQuote` (`src/lib/trails/quote.ts`) finds it in the chunk after normalizing whitespace, quote marks, dashes, and soft hyphens; a quote that is missing or ambiguous is dropped and the step is kept. Offsets are stored in code points (as Postgres counts them).
-- **Gist**: a 1–2 sentence AI summary grounded in that passage only, shown with an "AI summary" label.
-- **Full passage**: `GET /api/chunks/[id]/context` returns the chunk with its previous and next chunks, with the ~100-token chunk overlap removed at each seam.
-
-### Provenance and citations
-
-Every generated step now carries `sourceOrigin` (`library` or `web`), `sourceUrl`, `sourceDomain`, `sourceProvider`, and `retrievedAt`.
-
-- **Badges** — trails, steps, and notes show monochrome `In Your Library`, `Web Synthesized`, or `Hybrid` pills. A trail is `Hybrid` when its steps mix personal and researched passages.
-- **Citation drawer** — click the numbered source button on a step to open a glassmorphism side panel with the verified quote, the full retrieved passage, retrieval metadata, and an external link. Keyboard navigation (`Enter`, arrow keys) remains unchanged while the drawer is open.
-- **Research dialog** — the hero, header navigation, and command palette expose **Research the web**. Enter a topic or paste a URL; the dialog shows the three live research phases and saves the sources for future local retrieval.
-
-### Applying the hybrid migration
-
-After the existing migrations:
-
-```bash
-supabase db push
-```
-
-Then add `TAVILY_API_KEY` to `.env.local` and restart the dev server. Without it, automatic fallback returns a clear configuration message and topic-based research is unavailable, but library-only trails and pasted-URL extraction continue to work.
-
-Run the pure helper tests with `npm test`.
-
-## Routes
+All routes require a signed-in session and return JSON errors (`401` when signed out).
 
 | Route | Purpose |
 | --- | --- |
-| `/` | Redirects to `/sign-in` |
-| `/sign-in` | Sign-in card (email/password, Google, Apple) |
-| `/sign-up` | Account creation + email confirmation state |
-| `/forgot-password` | Sends a Supabase password-reset email |
-| `/reset-password` | Sets a new password from the recovery link |
-| `/dashboard` | Protected workspace: PDF uploader, pipeline summary, recent documents |
-| `POST /api/documents/upload` | Auth-checked ingestion pipeline |
-| `POST /api/trails` | Build and save a library-first trail, streaming progress and falling back to web research |
-| `GET /api/trails` | List the 50 most recent generated trails |
-| `GET /api/trails/[id]` | Fetch one generated trail with its cited passages |
-| `POST /api/trails/[id]/continue` | Append 2–4 follow-up steps to a generated trail |
-| `GET /api/chunks/[id]/context` | A cited chunk with its previous/next chunks, overlap removed |
-| `/auth/callback` | OAuth / recovery code exchange |
+| `POST /api/documents/upload` | Store a PDF or image and index its extracted text |
+| `POST /api/documents/note` | Save and index a note |
+| `POST /api/trails` | Build a trail. Body: `{ question, mode?: "auto" \| "research", url? }`. Streams NDJSON progress, then the trail |
+| `GET /api/trails` | Your 50 most recent trails |
+| `GET /api/trails/[id]` | One trail with its cited passages |
+| `POST /api/trails/[id]/continue` | Append 2–4 steps for a follow-up question. Streams like `POST /api/trails` |
+| `GET /api/chunks/[id]/context` | A cited passage with the passages before and after it |
 
-## Structure
+Pages: `/sign-in`, `/sign-up`, `/forgot-password`, `/reset-password`, `/dashboard` (protected), and `/auth/callback` for OAuth and recovery links. `/` redirects to `/sign-in`.
+
+## Project structure
 
 ```
 src/
 ├─ app/
-│  ├─ api/
-│  │  ├─ documents/{upload,note}/route.ts  # ingest, chunk, embed, insert
-│  │  └─ trails/route.ts, trails/[id]/route.ts  # generate, list, fetch trails
-│  ├─ auth/callback/route.ts         # exchangeCodeForSession + safe redirect
-│  ├─ dashboard/                     # workspace UI + signOut action
-│  ├─ sign-in|sign-up|forgot-password|reset-password/
-│  └─ globals.css                    # tokens, glass surfaces, fields, grain
+│  ├─ api/                 # documents, trails, chunks route handlers
+│  ├─ auth/callback/       # OAuth and recovery code exchange
+│  ├─ dashboard/           # workspace page and sign-out action
+│  └─ sign-in, sign-up, forgot-password, reset-password/
 ├─ components/
-│  ├─ art/
-│  │  ├─ auth-artwork.tsx            # backdrop layering, gradient, convergence glow
-│  │  └─ flowing-lines.tsx           # SVG line field that merges to one stroke
-│  ├─ auth/                          # shell, cards, fields, social buttons
-│  ├─ dashboard/                     # workspace, command palette, trail overlays
-│  ├─ documents/pdf-uploader.tsx     # drag & drop, progress, status states
-│  └─ ui/                            # icons, spinner
+│  ├─ art/                 # SVG backdrop artwork
+│  ├─ auth/                # auth cards, fields, social sign-in
+│  ├─ dashboard/           # workspace, hero, trail views, dialogs, command palette
+│  ├─ documents/           # document uploader and OCR review
+│  └─ ui/                  # icons, spinner
 ├─ lib/
-│  ├─ auth.ts                        # validation, error mapping, safe redirects
-│  ├─ ingestion/
-│  │  ├─ constants.ts                # limits, bucket, batch sizes, chunk window
-│  │  ├─ chunk.ts                    # sentence-aware 500–800/100 overlap chunker
-│  │  ├─ embeddings.ts               # Gemini batching, retries, dimension checks
-│  │  └─ pdf.ts                      # unpdf page-by-page extraction
-│  ├─ rag/
-│  │  ├─ pipeline.ts                 # library-first routing + web fallback
-│  │  ├─ web.ts                      # Tavily search/extract + safe direct fetch
-│  │  ├─ ingest.ts                   # chunk, embed, dedupe, persist web sources
-│  │  └─ url.ts                      # canonical URLs + private-address guards
-│  ├─ trails/
-│  │  ├─ api.ts                      # API types, NDJSON stream parsing
-│  │  ├─ generate.ts                 # prompt, structured output, retries, validation
-│  │  └─ persist.ts                  # save trails + continuation steps
-│  └─ supabase/{client,server,proxy,config}.ts
-└─ proxy.ts                          # Next 16 Proxy: session refresh + route guards
-supabase/migrations/                 # pgvector, RLS, trail tables/functions, Storage
+│  ├─ dashboard/           # workspace types and per-user local cache
+│  ├─ documents/           # browser extraction: PDF, OCR, PowerPoint
+│  ├─ ingestion/           # chunking, embeddings, server PDF reading, limits
+│  ├─ rag/                 # library-or-web routing, Tavily, web source storage
+│  ├─ trails/              # trail generation, validation, quotes, persistence
+│  └─ supabase/            # browser, server, and proxy clients
+└─ proxy.ts                # session refresh and route protection (Next 16 "proxy")
+supabase/migrations/       # schema, RLS, RPC functions, storage bucket
+docs/architecture.md       # pipeline and schema deep dive
 ```
 
-## Notes
-
-- **Next.js 16 uses `proxy.ts`**, not `middleware.ts`. Session cookies are refreshed there on every matched request, and `/dashboard` is protected. API routes perform their own auth check and return JSON 401s.
-- **Cache Components is enabled.** Session-dependent dashboard sections (`AccountEmail`, `RecentDocuments`) sit inside `<Suspense>` boundaries so the static shell can prerender.
-- The backdrop artwork is **original inline SVG** — no stock assets, image requests, or 3D runtime. It is tinted with `currentColor`, layered under readability scrims, and its accent lines drift slowly unless `prefers-reduced-motion` is set.
-- PDFs are stored privately and accessed through user-scoped Supabase clients; no `service_role` key is used anywhere.
-- Scanned PDFs with no text layer need OCR before upload.
-- OAuth and password-reset emails require the redirect URLs above to be allowlisted in Supabase.
-
-## Scripts
+## Development
 
 ```bash
-npm run dev     # dev server
-npm run build   # production build + typecheck
-npm run lint    # eslint
+npm run dev     # dev server at http://localhost:3000
+npm run build   # production build and type check
+npm run lint    # ESLint
+npm test        # unit tests (node:test) for quotes, URLs, provenance, PowerPoint parsing
 npm start       # serve the production build
 ```
+
+This project uses **Next.js 16**, which differs from older versions: route protection lives in `src/proxy.ts` (not `middleware.ts`), and Cache Components are on, so anything that reads the session must sit inside a `<Suspense>` boundary. Read `node_modules/next/dist/docs/` before changing framework-level code (see `AGENTS.md`).
+
+## Troubleshooting
+
+| Problem | Fix |
+| --- | --- |
+| Questions never use the web | Set `TAVILY_API_KEY` and restart. If your library is large, raise `TRAIL_COVERAGE_THRESHOLD` (for example `0.7`) |
+| Web research runs too often | Lower `TRAIL_COVERAGE_THRESHOLD`, but keep it above ~0.55; unrelated text scores around 0.45–0.52 |
+| "Supabase is not configured" | Fill in `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` in `.env.local` and restart |
+| Errors mentioning a missing table or function | Run `npx supabase db push` to apply the latest migrations |
+| A `.ppt` file won't import | Open it in PowerPoint, save as `.pptx`, and import that |
+| A deck imports with little text | Image-only slides have no text layer. Export them as PDF or images and upload those for OCR |
+| Google sign-in or password reset fails | Add your `/auth/callback` URL to Supabase's redirect allowlist |
+
+## License
+
+[MIT](LICENSE) © 2026 Joseph Uzoigwe
