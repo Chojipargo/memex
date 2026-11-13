@@ -1042,6 +1042,16 @@ export function DashboardWorkspace({
             <Link
               href="/dashboard"
               aria-label="memex.ai dashboard home"
+              // Already on the dashboard: close whatever is open and go back
+              // to the top, so the logo always "returns home".
+              onClick={() => {
+                setOverlay(null);
+                setSelectedTrailId(null);
+                setSelectedNoteId(null);
+                setNoteTrailId(null);
+                setCitationNote(null);
+                window.scrollTo({ top: 0, behavior: reduceMotion ? "auto" : "smooth" });
+              }}
               className="rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
             >
               <BrandMark />

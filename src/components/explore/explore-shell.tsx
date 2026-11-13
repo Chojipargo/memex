@@ -20,8 +20,8 @@ export function ExploreShell({ children }: { children: ReactNode }) {
           <div className="mx-auto flex h-[4.4rem] w-full max-w-[72rem] items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
             <div className="flex min-w-0 items-center gap-4">
               <Link
-                href="/explore"
-                aria-label="Explore public trails"
+                href="/dashboard"
+                aria-label="memex.ai: back to your dashboard"
                 className="rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
               >
                 <BrandMark />
