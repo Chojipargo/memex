@@ -1,6 +1,8 @@
 import "server-only";
 
 import { EMBEDDING_BATCH_SIZE } from "./constants";
+import { EmbeddingCache } from "./embedding-cache";
+import { type RateLimitInfo, readRateLimitInfo, retryDelayMs } from "./rate-limit";
 
 export const EMBEDDING_MODEL = normalizeModelName(
   process.env.GEMINI_EMBEDDING_MODEL,
@@ -15,6 +17,14 @@ const GEMINI_EMBEDDINGS_URL =
   "https://generativelanguage.googleapis.com/v1beta/models";
 const MAX_ATTEMPTS = 3;
 const REQUEST_TIMEOUT_MS = 30_000;
+/** Longest a background call (uploads, notes) waits out a rate limit per retry. */
+const DEFAULT_MAX_RETRY_WAIT_MS = 30_000;
+
+/**
+ * Query embeddings (questions, searches, trail themes) repeat often and are
+ * cheap to keep, so they're cached in server memory instead of re-requested.
+ */
+const queryCache = new EmbeddingCache();
 
 export type EmbeddingTaskType = "RETRIEVAL_DOCUMENT" | "RETRIEVAL_QUERY";
 const DEFAULT_EMBEDDING_TASK_TYPE: EmbeddingTaskType = "RETRIEVAL_DOCUMENT";
@@ -25,6 +35,11 @@ export type EmbeddingOptions = {
   timeoutMs?: number;
   /** Total attempts, including the first. Defaults to 3. */
   maxAttempts?: number;
+  /**
+   * Longest wait before a retry. When Gemini asks us to wait longer than
+   * this, fail straight away with a message saying how long. Defaults to 30s.
+   */
+  maxRetryWaitMs?: number;
 };
 
 export class EmbeddingError extends Error {
@@ -104,6 +119,7 @@ async function requestBatch(
 ): Promise<number[][]> {
   const timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS;
   const maxAttempts = Math.max(1, options.maxAttempts ?? MAX_ATTEMPTS);
+  const maxRetryWaitMs = options.maxRetryWaitMs ?? DEFAULT_MAX_RETRY_WAIT_MS;
   let lastError: EmbeddingError | null = null;
 
   // gemini-embedding-2 rejects `taskType`; it expects task instructions in the
@@ -144,7 +160,7 @@ async function requestBatch(
       );
 
       if (attempt < maxAttempts) {
-        await sleep(500 * 2 ** (attempt - 1));
+        await sleep(retryDelayMs(attempt, null));
       }
 
       continue;
@@ -206,14 +222,36 @@ async function requestBatch(
       );
     }
 
+    if (response.status === 429) {
+      const info = readRateLimitInfo(payload, response.headers.get("retry-after"));
+
+      // Retrying can't beat a daily quota; say what will.
+      if (info.daily) {
+        throw new EmbeddingError(
+          "Gemini's daily limit for GEMINI_API_KEY is used up, so questions can't be searched until it resets (usually midnight Pacific time). Enabling billing on the key's Google Cloud project raises the limit.",
+          429,
+        );
+      }
+
+      const wait = retryDelayMs(attempt, info);
+      lastError = rateLimitedError(info);
+
+      if (attempt < maxAttempts && wait <= maxRetryWaitMs) {
+        await sleep(wait);
+      } else {
+        // Waiting longer than this call can afford: fail now with the delay.
+        throw lastError;
+      }
+
+      continue;
+    }
+
     lastError = new EmbeddingError(
-      response.status === 429
-        ? "The Gemini embedding provider is rate-limiting requests. Try again in a moment."
-        : "The Gemini embedding provider is temporarily unavailable. Try again in a moment.",
+      "The Gemini embedding provider is temporarily unavailable. Try again in a moment.",
     );
 
     if (attempt < maxAttempts) {
-      await sleep(500 * 2 ** (attempt - 1));
+      await sleep(retryDelayMs(attempt, null));
     }
   }
 
@@ -225,9 +263,26 @@ async function requestBatch(
   );
 }
 
+function rateLimitedError(info: RateLimitInfo): EmbeddingError {
+  const seconds =
+    info.retryAfterMs !== null ? Math.max(1, Math.ceil(info.retryAfterMs / 1000)) : null;
+
+  return new EmbeddingError(
+    seconds !== null
+      ? `Gemini's per-minute limit for GEMINI_API_KEY was reached. Try again in about ${seconds} second${seconds === 1 ? "" : "s"}.`
+      : "Gemini's per-minute limit for GEMINI_API_KEY was reached. Try again in a minute.",
+    429,
+  );
+}
+
+function cacheKey(taskType: EmbeddingTaskType, text: string): string {
+  return `${EMBEDDING_MODEL}:${EMBEDDING_DIMENSIONS}:${taskType}:${text}`;
+}
+
 /**
  * Embed chunk text with Gemini in batches of up to 64. Returns vectors in the
  * same order as the input so callers can zip them back onto their chunks.
+ * Query embeddings are served from an in-memory cache when possible.
  */
 export async function embedTexts(
   texts: string[],
@@ -242,18 +297,31 @@ export async function embedTexts(
     );
   }
 
-  const vectors: number[][] = [];
+  const cacheable = taskType === "RETRIEVAL_QUERY";
+  const vectors: (number[] | null)[] = texts.map((text) =>
+    cacheable ? queryCache.get(cacheKey(taskType, text)) : null,
+  );
+  const missing = texts
+    .map((text, index) => ({ text, index }))
+    .filter((item) => vectors[item.index] === null);
 
-  for (let start = 0; start < texts.length; start += EMBEDDING_BATCH_SIZE) {
-    const batch = texts.slice(start, start + EMBEDDING_BATCH_SIZE);
+  for (let start = 0; start < missing.length; start += EMBEDDING_BATCH_SIZE) {
+    const batch = missing.slice(start, start + EMBEDDING_BATCH_SIZE);
     const batchVectors = await requestBatch(
-      batch,
+      batch.map((item) => item.text),
       apiKey,
       taskType,
       options,
     );
-    vectors.push(...batchVectors);
+
+    batch.forEach((item, offset) => {
+      vectors[item.index] = batchVectors[offset];
+
+      if (cacheable) {
+        queryCache.set(cacheKey(taskType, item.text), batchVectors[offset]);
+      }
+    });
   }
 
-  return vectors;
+  return vectors as number[][];
 }

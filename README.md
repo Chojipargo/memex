@@ -179,7 +179,17 @@ npm start       # serve the production build
 This project uses **Next.js 16**, which differs from older versions: route protection lives in `src/proxy.ts` (not `middleware.ts`), and Cache Components are on, so anything that reads the session must sit inside a `<Suspense>` boundary. Read `node_modules/next/dist/docs/` before changing framework-level code (see `AGENTS.md`).
 
 
-
+| Problem | Fix |
+| --- | --- |
+| Questions never use the web | Set `TAVILY_API_KEY` and restart. If your library is large, raise `TRAIL_COVERAGE_THRESHOLD` (for example `0.7`) |
+| "Gemini's per-minute limit … was reached" | Wait the number of seconds shown. A question retries once on its own if Gemini asks for a short wait. Questions that research the web use the most quota, because each new page is embedded. Enabling billing on the key's Google Cloud project raises the limits |
+| "Gemini's daily limit … is used up" | It resets daily (usually midnight Pacific time). Enable billing on the key's Google Cloud project for a higher limit |
+| Web research runs too often | Lower `TRAIL_COVERAGE_THRESHOLD`, but keep it above ~0.55; unrelated text scores around 0.45–0.52 |
+| "Supabase is not configured" | Fill in `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` in `.env.local` and restart |
+| Errors mentioning a missing table or function | Run `npx supabase db push` to apply the latest migrations |
+| A `.ppt` file won't import | Open it in PowerPoint, save as `.pptx`, and import that |
+| A deck imports with little text | Image-only slides have no text layer. Export them as PDF or images and upload those for OCR |
+| Google sign-in or password reset fails | Add your `/auth/callback` URL to Supabase's redirect allowlist |
 
 ## License
 
