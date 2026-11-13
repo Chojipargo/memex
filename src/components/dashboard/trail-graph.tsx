@@ -98,7 +98,9 @@ const MAP_HEIGHT = 310;
 
 function shortLabel(title: string, page: number): string {
   const clean = title.replace(/(?:\s*\(\d+\))+$/, "").trim() || title;
-  const short = clean.length > 22 ? `${clean.slice(0, 21).trimEnd()}…` : clean;
+  // Kept short so neighbouring labels don't run into each other; the full
+  // title is in the node's hover tooltip.
+  const short = clean.length > 16 ? `${clean.slice(0, 15).trimEnd()}…` : clean;
   return `${short} · p.${page}`;
 }
 
@@ -261,10 +263,10 @@ export function AssociativeMap({
             />
             <text
               x={point.x}
-              y={point.y + radius + 13}
+              y={point.y + radius + 10}
               textAnchor="middle"
               fill="currentColor"
-              fontSize={10}
+              fontSize={8}
               letterSpacing="0.01em"
               opacity={isHovered ? 1 : 0.7}
             >
