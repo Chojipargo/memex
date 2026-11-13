@@ -56,7 +56,6 @@ Without credentials the UI still renders; auth actions and uploads show a config
    - your production `/auth/callback`
 3. **Google** — Authentication → Providers → Google. Create a Google Cloud OAuth client with redirect URI:
    `https://sapiejhntzbhtiumvxty.supabase.co/auth/v1/callback`
-4. **Apple** — Authentication → Providers → Apple. Requires an Apple Developer account (Services ID, Team ID, Key ID, `.p8` key).
 
 ## Document ingestion
 
@@ -165,7 +164,7 @@ Run the pure helper tests with `npm test`.
 | Route | Purpose |
 | --- | --- |
 | `/` | Redirects to `/sign-in` |
-| `/sign-in` | Sign-in card (email/password, Google, Apple) |
+| `/sign-in` | Sign-in card (email/password, Google) |
 | `/sign-up` | Account creation + email confirmation state |
 | `/forgot-password` | Sends a Supabase password-reset email |
 | `/reset-password` | Sets a new password from the recovery link |
