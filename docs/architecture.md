@@ -124,8 +124,22 @@ Migrations in `supabase/migrations/`, applied in order:
 | `20261111120000_hybrid_rag.sql` | Source provenance columns on `documents`; `match_documents` |
 | `20261113120000_match_documents_recall.sql` | Wider (`ef_search` 400) and, on pgvector 0.8+, iterative HNSW scans in `match_documents`, so filtering to the caller's rows doesn't starve results when many users share the index |
 | `20261113150000_published_trails.sql` | `published_trails` (public trail snapshots), `published_trail_learners`, and the `publish_trail` / `unpublish_trail` / `get_trail_publication` / `record_trail_learner` functions |
+| `20261114090000_associative_links.sql` | `links` table; `link_id` and `annotation` on `trail_steps`; converts existing trails into links; `link_trail_steps`, `create_user_link`, `record_link_traversal`, `get_passage_backlinks` |
 
 Every private table has owner-scoped RLS (`user_id = auth.uid()`, or through the owning document for `chunks`). The RPC functions are `security invoker` and check ownership of the trail and every cited chunk themselves. The exception is published trails (below).
+
+## Associative links
+
+A **link** (`public.links`) joins two of a user's passages and says why they connect. It is stored once, in reading order (`source_chunk_id → target_chunk_id`, unique per user and pair), and queried from either end. `origin` is `user` for links made by hand and `claude_accepted` for links Claude wrote that the user kept; generated trails count as accepted. Claude's unaccepted suggestions are never stored.
+
+A trail is a chain of passages joined by links: every `trail_steps` row after the first has `link_id`, the link from the previous step's passage. `create_generated_trail` and `append_generated_trail_steps` call `link_trail_steps`, which reuses an existing link for the same pair (keeping its reason) or creates one from the step's note. The API returns the link's reason as each step's `note`, falling back to the legacy column. `annotation` is the reader's own note on a step, separate from the reason.
+
+- `GET /api/chunks/[id]/backlinks` (`get_passage_backlinks`): the passage's links in both directions, with the passage at the other end, and every trail through it with the steps before and after.
+- `POST /api/links`: `{ sourceChunkId, targetChunkId, reason }` makes a `user` link, or re-words an existing one.
+- `POST /api/links/[id]/traverse`: increments `traversal_count` and sets `last_traversed_at` when a reader follows a link.
+- `GET /api/chunks/search?q=`: semantic search over the caller's passages, used to pick a link target.
+
+The passage drawer shows these in its **Also on these trails / Tied to these passages** panel.
 
 ## Public trails (Explore)
 

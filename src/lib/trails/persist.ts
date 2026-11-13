@@ -49,11 +49,13 @@ function sourceSteps(
 /** Persist a generated trail and return the API shape the client renders. */
 export async function createGeneratedTrail({
   supabase,
+  userId,
   question,
   generated,
   candidates,
 }: {
   supabase: ServerSupabase;
+  userId: string;
   question: string;
   generated: GeneratedTrail;
   candidates: ReadonlyArray<MatchedChunk>;
@@ -84,6 +86,14 @@ export async function createGeneratedTrail({
       "The trail service returned an unexpected response.",
       502,
     );
+  }
+
+  // Reload so each step carries its link. A connection that already existed
+  // keeps its original reason, which may differ from the one just written.
+  const savedTrail = await loadTrail(supabase, userId, trailId).catch(() => null);
+
+  if (savedTrail) {
+    return savedTrail;
   }
 
   const apiSteps: TrailApiStep[] = sourced.map(({ step, candidate }, index) =>

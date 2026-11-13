@@ -11,7 +11,12 @@ export type TrailApiStep = {
   documentId: string;
   documentTitle: string;
   page: number;
+  /** Why this step follows the previous one: the link's reason, or the legacy step note. */
   note: string;
+  /** Link from the previous step's passage to this one. Null on the first step. */
+  linkId?: string | null;
+  /** The reader's own note on this step, separate from the link's reason. */
+  annotation?: string | null;
   /** AI summary of the passage (label it as such in the UI). */
   gist: string | null;
   /** Verified verbatim key quote from `content`, or null. */
@@ -140,6 +145,8 @@ function parseStep(value: unknown): TrailApiStep | null {
   const sourceDomain = asNullableString(record.sourceDomain);
   const sourceProvider = asNullableString(record.sourceProvider);
   const retrievedAt = asNullableString(record.retrievedAt);
+  const linkId = asNullableString(record.linkId);
+  const annotation = asNullableString(record.annotation);
 
   if (
     position === null ||
@@ -155,7 +162,9 @@ function parseStep(value: unknown): TrailApiStep | null {
     sourceUrl === undefined ||
     sourceDomain === undefined ||
     sourceProvider === undefined ||
-    retrievedAt === undefined
+    retrievedAt === undefined ||
+    linkId === undefined ||
+    annotation === undefined
   ) {
     return null;
   }
@@ -167,6 +176,8 @@ function parseStep(value: unknown): TrailApiStep | null {
     documentTitle,
     page,
     note,
+    linkId,
+    annotation,
     gist,
     quote,
     content,

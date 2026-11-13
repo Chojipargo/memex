@@ -72,7 +72,13 @@ import {
   LOCAL_NOTE_BODY_MAX_CHARS,
 } from "@/lib/ingestion/constants";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
-import { postTrailQuestion, type TrailApi } from "@/lib/trails/api";
+import { linkedPassageToNote } from "@/lib/links/types";
+import {
+  parseTrailApiResponse,
+  postTrailQuestion,
+  readApiError,
+  type TrailApi,
+} from "@/lib/trails/api";
 import {
   apiTrailIdOf,
   generatedTrailId,
@@ -507,6 +513,43 @@ export function DashboardWorkspace({
     setTrailSequenceIds(orderedTrails.map((item) => item.id));
     setSelectedTrailId(trail.id);
     setFocusedNodeIndex(0);
+  };
+
+  /** Open a generated trail focused on one step, loading it if it isn't cached. */
+  const openTrailAt = async (apiTrailId: string, position: number) => {
+    const workspaceId = generatedTrailId(apiTrailId);
+    let trail = trails.find((item) => item.id === workspaceId) ?? null;
+
+    if (!trail) {
+      try {
+        const response = await fetch(`/api/trails/${apiTrailId}`);
+        const body = (await response.json().catch(() => null)) as {
+          trail?: unknown;
+        } | null;
+        const api = response.ok ? parseTrailApiResponse(body?.trail) : null;
+
+        if (!api) {
+          notify(readApiError(body) ?? "Could not open that trail.");
+          return;
+        }
+
+        const mapped = trailToWorkspace(api);
+        setNotes((current) => mergeNotes(current, mapped.notes));
+        setTrails((current) => upsertTrail(current, mapped.trail));
+        trail = mapped.trail;
+      } catch {
+        notify("Could not reach the server to open that trail.");
+        return;
+      }
+    }
+
+    setOverlay(null);
+    setSelectedNoteId(null);
+    setNoteTrailId(null);
+    setCitationNote(null);
+    setTrailSequenceIds(orderedTrails.map((item) => item.id));
+    setSelectedTrailId(trail.id);
+    setFocusedNodeIndex(Math.max(0, Math.min(position - 1, trail.nodes.length - 1)));
   };
 
   const togglePin = (note: Note) => {
@@ -1483,6 +1526,8 @@ export function DashboardWorkspace({
       <CitationDrawer
         note={citationNote}
         onClose={() => setCitationNote(null)}
+        onOpenPassage={(passage) => setCitationNote(linkedPassageToNote(passage))}
+        onOpenTrailAt={(trailId, position) => void openTrailAt(trailId, position)}
       />
 
       <div

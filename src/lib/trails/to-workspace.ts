@@ -50,6 +50,8 @@ export function trailToWorkspace(api: TrailApi): { notes: Note[]; trail: Trail }
     kind: "quote",
     relation: step.note,
     sourceOrigin: step.sourceOrigin,
+    ...(step.linkId ? { linkId: step.linkId } : {}),
+    ...(step.annotation ? { annotation: step.annotation } : {}),
   }));
 
   return {

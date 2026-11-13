@@ -33,6 +33,10 @@ export type TrailNode = {
   kind: NoteKind;
   relation: string;
   sourceOrigin?: SourceOrigin;
+  /** Generated trails: the link from the previous step to this one. */
+  linkId?: string;
+  /** Generated trails: the reader's own note on this step. */
+  annotation?: string;
 };
 
 export type Trail = {

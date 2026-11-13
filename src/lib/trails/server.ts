@@ -348,7 +348,8 @@ function parseTrailSteps(value: unknown): TrailApiStep[] | null {
 
     const position = asInteger(row.position, 1);
     const chunkId = asInteger(row.chunk_id, 1);
-    const note = asString(row.note);
+    const link = asRecord(firstRelationship(row.links));
+    const note = asNonEmptyString(link?.reason) ?? asString(row.note);
     const documentId = asNonEmptyString(chunk.document_id);
     const documentTitle = asNonEmptyString(document.title);
     const page = asInteger(chunk.page, 1);
@@ -376,6 +377,8 @@ function parseTrailSteps(value: unknown): TrailApiStep[] | null {
       documentTitle,
       page,
       note,
+      linkId: asNonEmptyString(row.link_id),
+      annotation: asNonEmptyString(row.annotation),
       gist,
       quote: sliceStoredQuote(content, quoteStart, quoteEnd),
       content,
@@ -437,7 +440,7 @@ export async function loadTrail(
   const stepResult = await supabase
     .from("trail_steps")
     .select(
-      "position, chunk_id, note, gist, quote_start, quote_end, chunks!inner(document_id, page, text, documents!inner(title, source_kind, source_url, source_domain, source_provider, retrieved_at))",
+      "position, chunk_id, note, link_id, annotation, gist, quote_start, quote_end, links(reason), chunks!inner(document_id, page, text, documents!inner(title, source_kind, source_url, source_domain, source_provider, retrieved_at))",
     )
     .eq("trail_id", trailId)
     .eq("user_id", userId)

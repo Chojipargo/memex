@@ -154,6 +154,7 @@ export async function POST(request: Request) {
 
       return createGeneratedTrail({
         supabase,
+        userId: user.id,
         question,
         generated: result.generated,
         candidates: result.candidates,

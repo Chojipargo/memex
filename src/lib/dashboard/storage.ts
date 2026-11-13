@@ -151,6 +151,10 @@ function parseNode(value: unknown): TrailNode | null {
     ...(isSourceOrigin(r.sourceOrigin)
       ? { sourceOrigin: r.sourceOrigin }
       : {}),
+    ...(isString(r.linkId) && r.linkId ? { linkId: r.linkId } : {}),
+    ...(isString(r.annotation) && r.annotation
+      ? { annotation: r.annotation }
+      : {}),
   };
 }
 
