@@ -2,9 +2,11 @@
 
 import {
   type FormEvent,
+  type Ref,
   type RefObject,
   useEffect,
   useId,
+  useImperativeHandle,
   useState,
 } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
@@ -16,6 +18,7 @@ import {
 } from "@/components/dashboard/trail-question";
 import {
   ArrowRightIcon,
+  GlobeIcon,
   PlusIcon,
   SparkIcon,
 } from "@/components/ui/dashboard-icons";
@@ -25,19 +28,28 @@ import type { TrailApi } from "@/lib/trails/api";
 
 export const DEFAULT_HERO_PLACEHOLDER = "Ask a question to build a trail…";
 
+/** Lets other surfaces (e.g. the trail view) start a new trail through the hero. */
+export type HeroHandle = {
+  ask: (question: string) => void;
+};
+
 export function DashboardHero({
+  controlRef,
   inputRef,
   placeholder = DEFAULT_HERO_PLACEHOLDER,
   onTrailBuilt,
   onSaveNote,
   onUploadSource,
+  onResearch,
   onSearch,
 }: {
+  controlRef?: Ref<HeroHandle>;
   inputRef: RefObject<HTMLInputElement | null>;
   placeholder?: string;
   onTrailBuilt: (trail: TrailApi) => void;
   onSaveNote: (prompt: string) => void;
   onUploadSource: () => void;
+  onResearch: () => void;
   onSearch: () => void;
 }) {
   const [phrase, setPhrase] = useState(0);
@@ -78,6 +90,13 @@ export function DashboardHero({
     }
   };
 
+  useImperativeHandle(controlRef, () => ({
+    ask: (question: string) => {
+      setPrompt(question);
+      void ask(question);
+    },
+  }));
+
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     void ask(prompt);
@@ -95,7 +114,7 @@ export function DashboardHero({
           <span className="absolute inline-flex size-full animate-ping rounded-full bg-white/50" />
           <span className="relative inline-flex size-1.5 rounded-full bg-white/80" />
         </span>
-        <span className="font-mono text-[9.5px] uppercase tracking-[0.28em] text-neutral-400">
+        <span className="font-mono text-[12px] uppercase tracking-[0.28em] text-neutral-400">
           Your private associative memory
         </span>
       </motion.div>
@@ -148,10 +167,11 @@ export function DashboardHero({
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.15, duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
-        className="mt-3 max-w-xl text-balance text-[13.5px] leading-6 text-mist sm:text-[14px]"
+        className="mt-3 max-w-xl text-balance text-[15.5px] leading-6 text-mist sm:text-[16px]"
       >
-        Ask a question and memex builds a trail through your own sources:
-        every step a real passage, with a note on why it comes next.
+        Ask a question and memex builds a trail through your own sources,
+        researching the web only when your library cannot answer. Every step is
+        a real passage, with a note on why it comes next.
       </motion.p>
 
       <motion.form
@@ -195,14 +215,14 @@ export function DashboardHero({
             aria-disabled={pending}
             aria-invalid={error ? true : undefined}
             aria-describedby={error ? errorId : undefined}
-            className="h-12 min-w-0 flex-1 bg-transparent pr-2 text-[14px] text-white outline-none placeholder:text-neutral-500 aria-disabled:text-neutral-400 sm:text-[14.5px]"
+            className="h-12 min-w-0 flex-1 bg-transparent pr-2 text-[16px] text-white outline-none placeholder:text-neutral-400 aria-disabled:text-neutral-400 sm:text-[16.5px]"
           />
 
           <button
             type="button"
             onClick={() => onSaveNote(prompt.trim())}
             disabled={pending}
-            className="hidden h-11 shrink-0 items-center gap-1.5 rounded-[0.95rem] px-3 text-[11.5px] text-neutral-400 transition hover:bg-white/[0.06] hover:text-white disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 sm:flex"
+            className="hidden h-11 shrink-0 items-center gap-1.5 rounded-[0.95rem] px-3 text-[13.5px] text-neutral-400 transition hover:bg-white/[0.06] hover:text-white disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 sm:flex"
           >
             <PlusIcon className="size-3.5" />
             Save as note
@@ -211,7 +231,7 @@ export function DashboardHero({
           <button
             type="submit"
             disabled={pending}
-            className="group flex h-11 shrink-0 items-center gap-2 rounded-[0.95rem] border border-white/10 bg-white px-4 text-[12.5px] font-medium text-neutral-950 transition hover:bg-neutral-200 disabled:cursor-progress disabled:bg-neutral-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-ink-950 sm:px-5"
+            className="group flex h-11 shrink-0 items-center gap-2 rounded-[0.95rem] border border-white/10 bg-white px-4 text-[14.5px] font-medium text-neutral-950 transition hover:bg-neutral-200 disabled:cursor-progress disabled:bg-neutral-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-ink-950 sm:px-5"
           >
             {pending ? (
               <>
@@ -235,11 +255,12 @@ export function DashboardHero({
           id={errorId}
           error={error}
           onUploadSource={onUploadSource}
+          onResearch={onResearch}
           className="px-4 pt-2"
         />
 
-        <div className="flex flex-wrap items-center justify-between gap-2 px-3 pb-1 pt-2">
-          <div className="flex flex-wrap items-center gap-1.5">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-3 pb-2 pt-3">
+          <div className="flex flex-wrap items-center gap-2">
             {promptSuggestions.map((suggestion) => (
               <button
                 key={suggestion}
@@ -249,32 +270,44 @@ export function DashboardHero({
                   setPrompt(suggestion);
                   void ask(suggestion);
                 }}
-                className="rounded-full disabled:cursor-not-allowed disabled:opacity-40 border border-white/[0.07] bg-white/[0.025] px-2.5 py-1 text-[10.5px] text-neutral-400 transition hover:border-white/15 hover:bg-white/[0.06] hover:text-neutral-100"
+                className="rounded-full border border-white/[0.12] bg-white/[0.04] px-4 py-2 text-[14px] font-medium text-neutral-200 transition hover:border-white/25 hover:bg-white/[0.09] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {suggestion}
               </button>
             ))}
           </div>
 
-          <button
-            type="button"
-            onClick={() => onSaveNote(prompt.trim())}
-            disabled={pending}
-            className="rounded-md px-2 py-1 text-[10.5px] text-neutral-500 transition hover:text-neutral-200 disabled:opacity-40 sm:hidden"
-          >
-            Save as note
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={onResearch}
+              disabled={pending}
+              className="inline-flex items-center gap-2 rounded-full border border-white/[0.12] bg-white/[0.04] px-4 py-2 text-[14px] font-medium text-neutral-200 transition hover:border-white/25 hover:bg-white/[0.09] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <GlobeIcon className="size-4" />
+              Research the web
+            </button>
 
-          <button
-            type="button"
-            onClick={onSearch}
-            className="hidden items-center gap-1.5 rounded-md px-2 py-1 font-mono text-[9.5px] uppercase tracking-[0.16em] text-neutral-600 transition hover:text-neutral-300 sm:flex"
-          >
-            <kbd className="rounded border border-white/10 bg-white/[0.04] px-1.5 py-0.5 text-[9px] text-neutral-400">
-              ⌘K
-            </kbd>
-            search
-          </button>
+            <button
+              type="button"
+              onClick={() => onSaveNote(prompt.trim())}
+              disabled={pending}
+              className="rounded-md px-2 py-1 text-[13px] text-neutral-400 transition hover:text-neutral-200 disabled:opacity-40 sm:hidden"
+            >
+              Save as note
+            </button>
+
+            <button
+              type="button"
+              onClick={onSearch}
+              className="hidden items-center gap-1.5 rounded-md px-2 py-1 font-mono text-[12px] uppercase tracking-[0.16em] text-neutral-500 transition hover:text-neutral-300 sm:flex"
+            >
+              <kbd className="rounded border border-white/10 bg-white/[0.04] px-1.5 py-0.5 text-[11.5px] text-neutral-400">
+                ⌘K
+              </kbd>
+              search
+            </button>
+          </div>
         </div>
       </motion.form>
     </section>

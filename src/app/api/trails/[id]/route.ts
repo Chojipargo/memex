@@ -3,7 +3,8 @@ import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { loadTrail, TrailError } from "@/lib/trails/server";
 
-export const maxDuration = 300;
+// Keep in sync with TRAIL_MAX_DURATION_SECONDS in lib/trails/timeouts.ts.
+export const maxDuration = 60;
 
 function errorResponse(error: unknown) {
   if (error instanceof TrailError) {

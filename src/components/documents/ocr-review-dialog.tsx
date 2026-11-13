@@ -68,7 +68,7 @@ export function OcrReviewDialog({
     >
       <div className="flex items-start justify-between gap-5 border-b border-white/[0.07] px-5 py-5 sm:px-7 sm:py-6">
         <div className="min-w-0">
-          <p className="font-mono text-[9px] uppercase tracking-[0.28em] text-neutral-500">
+          <p className="font-mono text-[11.5px] uppercase tracking-[0.28em] text-neutral-400">
             OCR review
           </p>
           <h2
@@ -77,7 +77,7 @@ export function OcrReviewDialog({
           >
             Verify what we extracted
           </h2>
-          <p className="mt-1.5 max-w-2xl text-[12.5px] leading-5 text-mist">
+          <p className="mt-1.5 max-w-2xl text-[14.5px] leading-5 text-mist">
             Compare the original against the raw text. Anything you edit here
             is what gets chunked and embedded into your trail.
           </p>
@@ -96,10 +96,10 @@ export function OcrReviewDialog({
       <div className="grid min-h-0 flex-1 overflow-y-auto lg:grid-cols-2 lg:overflow-hidden">
         <section className="flex min-h-0 flex-col border-b border-white/[0.07] lg:border-b-0 lg:border-r">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.06] px-5 py-3">
-            <p className="font-mono text-[9px] uppercase tracking-[0.22em] text-neutral-500">
+            <p className="font-mono text-[11.5px] uppercase tracking-[0.22em] text-neutral-400">
               Original document
             </p>
-            <span className="max-w-[16rem] truncate rounded-full border border-white/[0.08] bg-white/[0.03] px-2.5 py-1 font-mono text-[8.5px] uppercase tracking-[0.12em] text-neutral-500">
+            <span className="max-w-[16rem] truncate rounded-full border border-white/[0.08] bg-white/[0.03] px-2.5 py-1 font-mono text-[11px] uppercase tracking-[0.12em] text-neutral-400">
               {fileName}
             </span>
           </div>
@@ -114,8 +114,8 @@ export function OcrReviewDialog({
               />
             ) : (
               <div className="flex h-full min-h-[16rem] flex-col items-center justify-center rounded-xl border border-dashed border-white/[0.1] px-6 text-center">
-                <FileTextIcon className="size-6 text-neutral-600" />
-                <p className="mt-3 max-w-xs text-[12px] leading-5 text-neutral-500">
+                <FileTextIcon className="size-6 text-neutral-500" />
+                <p className="mt-3 max-w-xs text-[14px] leading-5 text-neutral-400">
                   A visual preview is not available, but the extracted text is
                   ready to review.
                 </p>
@@ -123,7 +123,7 @@ export function OcrReviewDialog({
             )}
 
             {fileKind === "pdf" ? (
-              <p className="mt-3 text-center font-mono text-[8.5px] uppercase tracking-[0.16em] text-neutral-600">
+              <p className="mt-3 text-center font-mono text-[11px] uppercase tracking-[0.16em] text-neutral-500">
                 Previewing page 1 of {pageCount}
               </p>
             ) : null}
@@ -132,10 +132,10 @@ export function OcrReviewDialog({
 
         <section className="flex min-h-0 flex-col">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.06] px-5 py-3">
-            <p className="font-mono text-[9px] uppercase tracking-[0.22em] text-neutral-500">
+            <p className="font-mono text-[11.5px] uppercase tracking-[0.22em] text-neutral-400">
               Extracted text
             </p>
-            <span className="rounded-full border border-white/[0.08] bg-white/[0.03] px-2.5 py-1 font-mono text-[8.5px] uppercase tracking-[0.12em] text-neutral-500">
+            <span className="rounded-full border border-white/[0.08] bg-white/[0.03] px-2.5 py-1 font-mono text-[11px] uppercase tracking-[0.12em] text-neutral-400">
               {methodLabel(method)} · {pageCount} page
               {pageCount === 1 ? "" : "s"}
             </span>
@@ -145,10 +145,10 @@ export function OcrReviewDialog({
             <div>
               <label
                 htmlFor="ocr-document-title"
-                className="mb-1.5 flex items-baseline justify-between gap-3 text-[12.5px] font-medium text-neutral-300"
+                className="mb-1.5 flex items-baseline justify-between gap-3 text-[14.5px] font-medium text-neutral-300"
               >
                 Title
-                <span className="text-[11px] font-normal text-neutral-600">
+                <span className="text-[13px] font-normal text-neutral-500">
                   Optional
                 </span>
               </label>
@@ -167,11 +167,11 @@ export function OcrReviewDialog({
               <div className="mb-1.5 flex items-baseline justify-between gap-3">
                 <label
                   htmlFor="ocr-document-text"
-                  className="text-[12.5px] font-medium text-neutral-300"
+                  className="text-[14.5px] font-medium text-neutral-300"
                 >
                   Raw text
                 </label>
-                <span className="font-mono text-[10px] text-neutral-600">
+                <span className="font-mono text-[12px] text-neutral-500">
                   {words.toLocaleString("en-US")} words
                 </span>
               </div>
@@ -182,9 +182,9 @@ export function OcrReviewDialog({
                 disabled={busy}
                 autoFocus={!busy}
                 spellCheck={false}
-                className="min-h-[20rem] flex-1 resize-none rounded-xl border border-white/[0.09] bg-white/[0.028] px-4 py-3 font-mono text-[12px] leading-6 text-white outline-none transition placeholder:text-neutral-600 hover:border-white/15 focus:border-white/25 focus:bg-white/[0.045] focus:shadow-[0_0_0_4px_rgba(255,255,255,0.05)] disabled:opacity-60 lg:min-h-0"
+                className="min-h-[20rem] flex-1 resize-none rounded-xl border border-white/[0.09] bg-white/[0.028] px-4 py-3 font-mono text-[14px] leading-6 text-white outline-none transition placeholder:text-neutral-500 hover:border-white/15 focus:border-white/25 focus:bg-white/[0.045] focus:shadow-[0_0_0_4px_rgba(255,255,255,0.05)] disabled:opacity-60 lg:min-h-0"
               />
-              <p className="mt-1.5 text-[10.5px] leading-5 text-neutral-600">
+              <p className="mt-1.5 text-[13px] leading-5 text-neutral-500">
                 Page markers stay in the text so each chunk keeps its page
                 number. Remove them to treat the document as one page.
               </p>
@@ -193,7 +193,7 @@ export function OcrReviewDialog({
             {error ? (
               <div
                 role="alert"
-                className="rounded-xl border border-red-400/20 bg-red-400/[0.06] px-4 py-3 text-[12px] leading-5 text-red-200"
+                className="rounded-xl border border-red-400/20 bg-red-400/[0.06] px-4 py-3 text-[14px] leading-5 text-red-200"
               >
                 {error}
               </div>
@@ -220,7 +220,7 @@ export function OcrReviewDialog({
         ) : null}
 
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="max-w-md text-[10.5px] leading-5 text-neutral-600">
+          <p className="max-w-md text-[13px] leading-5 text-neutral-500">
             The original file is stored privately. OCR runs in your browser; the
             edited text is chunked and embedded server-side.
           </p>
@@ -229,7 +229,7 @@ export function OcrReviewDialog({
               type="button"
               onClick={requestClose}
               disabled={busy}
-              className="inline-flex h-10 items-center justify-center rounded-xl border border-white/[0.09] bg-white/[0.03] px-3.5 text-[12px] font-medium text-neutral-300 transition hover:border-white/15 hover:bg-white/[0.06] hover:text-white disabled:cursor-wait disabled:opacity-40"
+              className="inline-flex h-10 items-center justify-center rounded-xl border border-white/[0.09] bg-white/[0.03] px-3.5 text-[14px] font-medium text-neutral-300 transition hover:border-white/15 hover:bg-white/[0.06] hover:text-white disabled:cursor-wait disabled:opacity-40"
             >
               Cancel
             </button>
@@ -237,7 +237,7 @@ export function OcrReviewDialog({
               type="button"
               onClick={onIngest}
               disabled={busy || !text.trim()}
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-white px-4 text-[12.5px] font-medium text-neutral-950 transition hover:bg-neutral-200 disabled:cursor-not-allowed disabled:opacity-45"
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-white px-4 text-[14.5px] font-medium text-neutral-950 transition hover:bg-neutral-200 disabled:cursor-not-allowed disabled:opacity-45"
             >
               {busy ? (
                 <>

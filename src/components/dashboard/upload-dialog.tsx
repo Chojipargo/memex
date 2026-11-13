@@ -161,10 +161,10 @@ export function UploadDialog({
         <button
           type="button"
           onClick={() => setTab("pdf")}
-          className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-[12px] font-medium transition ${
+          className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-[14px] font-medium transition ${
             tab === "pdf"
               ? "bg-white/[0.08] text-white"
-              : "text-neutral-500 hover:bg-white/[0.035] hover:text-neutral-200"
+              : "text-neutral-400 hover:bg-white/[0.035] hover:text-neutral-200"
           }`}
         >
           <FileTextIcon className="size-4" />
@@ -173,10 +173,10 @@ export function UploadDialog({
         <button
           type="button"
           onClick={() => setTab("note")}
-          className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-[12px] font-medium transition ${
+          className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-[14px] font-medium transition ${
             tab === "note"
               ? "bg-white/[0.08] text-white"
-              : "text-neutral-500 hover:bg-white/[0.035] hover:text-neutral-200"
+              : "text-neutral-400 hover:bg-white/[0.035] hover:text-neutral-200"
           }`}
         >
           <SparkIcon className="size-4" />
@@ -191,7 +191,7 @@ export function UploadDialog({
               targetTrailId={targetTrailId}
               onDocumentCreated={handleDocumentCreated}
             />
-            <p className="mt-4 text-[11px] leading-5 text-neutral-600">
+            <p className="mt-4 text-[13px] leading-5 text-neutral-500">
               Documents are stored privately in Supabase Storage. Text-layer
               PDFs are read directly; scanned pages and images are processed
               with OCR in your browser before anything is embedded.
@@ -200,7 +200,7 @@ export function UploadDialog({
         ) : (
           <form onSubmit={saveNote} className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-[12px] leading-5 text-mist">
+              <p className="text-[14px] leading-5 text-mist">
                 Write freely, paste from your clipboard, or import a{" "}
                 <span className="text-neutral-300">.txt</span> /{" "}
                 <span className="text-neutral-300">.md</span> file.
@@ -208,7 +208,7 @@ export function UploadDialog({
               <button
                 type="button"
                 onClick={() => textFileRef.current?.click()}
-                className="inline-flex items-center gap-2 rounded-lg border border-white/[0.09] bg-white/[0.03] px-3 py-1.5 text-[11.5px] text-neutral-300 transition hover:border-white/15 hover:bg-white/[0.06] hover:text-white"
+                className="inline-flex items-center gap-2 rounded-lg border border-white/[0.09] bg-white/[0.03] px-3 py-1.5 text-[13.5px] text-neutral-300 transition hover:border-white/15 hover:bg-white/[0.06] hover:text-white"
               >
                 <UploadIcon className="size-3.5" />
                 Import text file
@@ -230,10 +230,10 @@ export function UploadDialog({
             <div>
               <label
                 htmlFor="note-title"
-                className="mb-1.5 flex items-baseline justify-between gap-3 text-[12.5px] font-medium text-neutral-300"
+                className="mb-1.5 flex items-baseline justify-between gap-3 text-[14.5px] font-medium text-neutral-300"
               >
                 Title
-                <span className="text-[11px] font-normal text-neutral-600">
+                <span className="text-[13px] font-normal text-neutral-500">
                   Optional
                 </span>
               </label>
@@ -251,10 +251,10 @@ export function UploadDialog({
             <div>
               <label
                 htmlFor="note-content"
-                className="mb-1.5 flex items-baseline justify-between gap-3 text-[12.5px] font-medium text-neutral-300"
+                className="mb-1.5 flex items-baseline justify-between gap-3 text-[14.5px] font-medium text-neutral-300"
               >
                 Note
-                <span className="font-mono text-[10px] font-normal text-neutral-600">
+                <span className="font-mono text-[12px] font-normal text-neutral-500">
                   {words.toLocaleString("en-US")} words
                 </span>
               </label>
@@ -264,9 +264,9 @@ export function UploadDialog({
                 onChange={(event) => setContent(event.target.value)}
                 placeholder="Start with a question, a quotation, or the thought you don't want to lose..."
                 disabled={saving}
-                className="min-h-[12rem] w-full resize-y rounded-xl border border-white/[0.09] bg-white/[0.028] px-4 py-3 text-[13.5px] leading-6 text-white outline-none transition placeholder:text-neutral-600 hover:border-white/15 focus:border-white/25 focus:bg-white/[0.045] focus:shadow-[0_0_0_4px_rgba(255,255,255,0.05)] disabled:opacity-60"
+                className="min-h-[12rem] w-full resize-y rounded-xl border border-white/[0.09] bg-white/[0.028] px-4 py-3 text-[15.5px] leading-6 text-white outline-none transition placeholder:text-neutral-500 hover:border-white/15 focus:border-white/25 focus:bg-white/[0.045] focus:shadow-[0_0_0_4px_rgba(255,255,255,0.05)] disabled:opacity-60"
               />
-              <p className="mt-1.5 flex items-center justify-between gap-3 text-[10.5px] text-neutral-600">
+              <p className="mt-1.5 flex items-center justify-between gap-3 text-[13px] text-neutral-500">
                 <span>
                   Split into 500–800 token chunks with a 100-token overlap.
                 </span>
@@ -277,20 +277,20 @@ export function UploadDialog({
             {error ? (
               <div
                 role="alert"
-                className="rounded-xl border border-white/20 bg-white/[0.06] px-4 py-3 text-[12px] leading-5 text-neutral-100"
+                className="rounded-xl border border-white/20 bg-white/[0.06] px-4 py-3 text-[14px] leading-5 text-neutral-100"
               >
                 {error}
               </div>
             ) : null}
 
             <div className="flex items-center justify-between gap-4 border-t border-white/[0.07] pt-4">
-              <p className="hidden text-[11px] leading-5 text-neutral-600 sm:block">
+              <p className="hidden text-[13px] leading-5 text-neutral-500 sm:block">
                 The note stays private. Only you can read its embeddings.
               </p>
               <button
                 type="submit"
                 disabled={saving || !content.trim()}
-                className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-white px-4 text-[12.5px] font-medium text-neutral-950 transition hover:bg-neutral-200 disabled:cursor-not-allowed disabled:opacity-45"
+                className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-white px-4 text-[14.5px] font-medium text-neutral-950 transition hover:bg-neutral-200 disabled:cursor-not-allowed disabled:opacity-45"
               >
                 {saving ? (
                   <>

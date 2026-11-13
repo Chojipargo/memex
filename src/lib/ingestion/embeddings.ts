@@ -14,17 +14,26 @@ export const EMBEDDING_DIMENSIONS = positiveInteger(
 const GEMINI_EMBEDDINGS_URL =
   "https://generativelanguage.googleapis.com/v1beta/models";
 const MAX_ATTEMPTS = 3;
-const REQUEST_TIMEOUT_MS = 60_000;
+const REQUEST_TIMEOUT_MS = 30_000;
 
 export type EmbeddingTaskType = "RETRIEVAL_DOCUMENT" | "RETRIEVAL_QUERY";
 const DEFAULT_EMBEDDING_TASK_TYPE: EmbeddingTaskType = "RETRIEVAL_DOCUMENT";
 
-export class EmbeddingError extends Error {
-  readonly status = 502;
+/** Per-call overrides so request-scoped routes can use a tighter budget. */
+export type EmbeddingOptions = {
+  /** Timeout for one HTTP attempt. Defaults to 30 seconds. */
+  timeoutMs?: number;
+  /** Total attempts, including the first. Defaults to 3. */
+  maxAttempts?: number;
+};
 
-  constructor(message: string) {
+export class EmbeddingError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status = 502) {
     super(message);
     this.name = "EmbeddingError";
+    this.status = status;
   }
 }
 
@@ -58,6 +67,13 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function isTimeoutError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (error.name === "TimeoutError" || error.name === "AbortError")
+  );
+}
+
 /**
  * `gemini-embedding-001` returns unnormalized vectors when you request fewer
  * than 3072 dimensions. Normalize them so cosine distance is well-behaved.
@@ -84,14 +100,17 @@ async function requestBatch(
   input: string[],
   apiKey: string,
   taskType: EmbeddingTaskType,
+  options: EmbeddingOptions = {},
 ): Promise<number[][]> {
+  const timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS;
+  const maxAttempts = Math.max(1, options.maxAttempts ?? MAX_ATTEMPTS);
   let lastError: EmbeddingError | null = null;
 
   // gemini-embedding-2 rejects `taskType`; it expects task instructions in the
   // prompt instead. The default gemini-embedding-001 uses the structured field.
   const supportsTaskType = !EMBEDDING_MODEL.startsWith("gemini-embedding-2");
 
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     let response: Response;
 
     try {
@@ -111,15 +130,20 @@ async function requestBatch(
               outputDimensionality: EMBEDDING_DIMENSIONS,
             })),
           }),
-          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+          signal: AbortSignal.timeout(timeoutMs),
         },
       );
-    } catch {
+    } catch (error) {
+      const timedOut = isTimeoutError(error);
+
       lastError = new EmbeddingError(
-        "Could not reach the Gemini embedding provider. Check the network and try again.",
+        timedOut
+          ? "The Gemini embedding provider timed out. Try again in a moment."
+          : "Could not reach the Gemini embedding provider. Check the network and try again.",
+        timedOut ? 504 : 502,
       );
 
-      if (attempt < MAX_ATTEMPTS) {
+      if (attempt < maxAttempts) {
         await sleep(500 * 2 ** (attempt - 1));
       }
 
@@ -188,7 +212,7 @@ async function requestBatch(
         : "The Gemini embedding provider is temporarily unavailable. Try again in a moment.",
     );
 
-    if (attempt < MAX_ATTEMPTS) {
+    if (attempt < maxAttempts) {
       await sleep(500 * 2 ** (attempt - 1));
     }
   }
@@ -208,6 +232,7 @@ async function requestBatch(
 export async function embedTexts(
   texts: string[],
   taskType: EmbeddingTaskType = DEFAULT_EMBEDDING_TASK_TYPE,
+  options: EmbeddingOptions = {},
 ): Promise<number[][]> {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
 
@@ -221,7 +246,12 @@ export async function embedTexts(
 
   for (let start = 0; start < texts.length; start += EMBEDDING_BATCH_SIZE) {
     const batch = texts.slice(start, start + EMBEDDING_BATCH_SIZE);
-    const batchVectors = await requestBatch(batch, apiKey, taskType);
+    const batchVectors = await requestBatch(
+      batch,
+      apiKey,
+      taskType,
+      options,
+    );
     vectors.push(...batchVectors);
   }
 

@@ -168,7 +168,7 @@ export function DialogHeader({
   return (
     <div className="flex items-start justify-between gap-5 border-b border-white/[0.07] px-5 py-5 sm:px-7 sm:py-6">
       <div>
-        <p className="font-mono text-[9px] uppercase tracking-[0.28em] text-neutral-500">
+        <p className="font-mono text-[11.5px] uppercase tracking-[0.28em] text-neutral-400">
           {eyebrow}
         </p>
         <h2
@@ -178,7 +178,7 @@ export function DialogHeader({
           {title}
         </h2>
         {description ? (
-          <p className="mt-1.5 max-w-lg text-[12.5px] leading-5 text-mist">
+          <p className="mt-1.5 max-w-lg text-[14.5px] leading-5 text-mist">
             {description}
           </p>
         ) : null}

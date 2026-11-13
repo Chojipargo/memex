@@ -33,6 +33,16 @@ function isNoteKind(value: unknown): value is NoteKind {
   return isString(value) && NOTE_KINDS.has(value as NoteKind);
 }
 
+function isSourceOrigin(value: unknown): value is "library" | "web" {
+  return value === "library" || value === "web";
+}
+
+function isProvenance(
+  value: unknown,
+): value is "library" | "web" | "hybrid" {
+  return value === "library" || value === "web" || value === "hybrid";
+}
+
 function parseNote(value: unknown): Note | null {
   const r = asRecord(value);
 
@@ -61,6 +71,25 @@ function parseNote(value: unknown): Note | null {
     updatedAt: r.updatedAt,
     pinned: r.pinned,
     ...(r.source !== undefined ? { source: r.source } : {}),
+    // Optional digest fields; malformed values are dropped, not fatal.
+    ...(typeof r.chunkId === "number" && Number.isInteger(r.chunkId)
+      ? { chunkId: r.chunkId }
+      : {}),
+    ...(isString(r.gist) && r.gist ? { gist: r.gist } : {}),
+    ...(isString(r.quote) && r.quote ? { quote: r.quote } : {}),
+    ...(isSourceOrigin(r.sourceOrigin)
+      ? { sourceOrigin: r.sourceOrigin }
+      : {}),
+    ...(isString(r.sourceUrl) && r.sourceUrl ? { sourceUrl: r.sourceUrl } : {}),
+    ...(isString(r.sourceDomain) && r.sourceDomain
+      ? { sourceDomain: r.sourceDomain }
+      : {}),
+    ...(isString(r.sourceProvider) && r.sourceProvider
+      ? { sourceProvider: r.sourceProvider }
+      : {}),
+    ...(isString(r.retrievedAt) && r.retrievedAt
+      ? { retrievedAt: r.retrievedAt }
+      : {}),
   };
 }
 
@@ -84,6 +113,9 @@ function parseNode(value: unknown): TrailNode | null {
     label: r.label,
     kind: r.kind,
     relation: r.relation,
+    ...(isSourceOrigin(r.sourceOrigin)
+      ? { sourceOrigin: r.sourceOrigin }
+      : {}),
   };
 }
 
@@ -121,6 +153,7 @@ function parseTrail(value: unknown): Trail | null {
     updatedAt: r.updatedAt,
     saved: r.saved,
     nodes,
+    ...(isProvenance(r.origin) ? { origin: r.origin } : {}),
   };
 }
 

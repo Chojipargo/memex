@@ -29,12 +29,12 @@ function OnboardingStep({
     >
       <div className="flex items-center gap-2.5">
         <span
-          className={`grid size-7 shrink-0 place-items-center rounded-full border font-mono text-[9.5px] ${
+          className={`grid size-7 shrink-0 place-items-center rounded-full border font-mono text-[12px] ${
             state === "done"
               ? "border-white/25 bg-white/[0.1] text-white"
               : state === "current"
                 ? "border-white/40 bg-white/[0.12] text-white"
-                : "border-white/[0.12] text-neutral-500"
+                : "border-white/[0.12] text-neutral-400"
           }`}
         >
           {state === "done" ? (
@@ -44,7 +44,7 @@ function OnboardingStep({
           )}
         </span>
         <h3
-          className={`text-[13px] font-medium tracking-[-0.01em] ${
+          className={`text-[15px] font-medium tracking-[-0.01em] ${
             state === "upcoming" ? "text-neutral-400" : "text-white"
           }`}
         >
@@ -58,7 +58,7 @@ function OnboardingStep({
               : ""}
         </span>
       </div>
-      <div className="mt-3 flex flex-1 flex-col text-[11.5px] leading-5 text-neutral-500">
+      <div className="mt-3 flex flex-1 flex-col text-[13.5px] leading-5 text-neutral-400">
         {children}
       </div>
     </li>
@@ -66,7 +66,7 @@ function OnboardingStep({
 }
 
 const actionClass = (primary: boolean) =>
-  `mt-auto inline-flex h-9 w-fit items-center rounded-xl px-3.5 text-[11.5px] font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 ${
+  `mt-auto inline-flex h-9 w-fit items-center rounded-xl px-3.5 text-[13.5px] font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 ${
     primary
       ? "bg-white text-neutral-950 hover:bg-neutral-200"
       : "border border-white/[0.1] bg-white/[0.03] text-neutral-300 hover:border-white/20 hover:bg-white/[0.07] hover:text-white"
@@ -96,7 +96,7 @@ export function Onboarding({
       transition={{ delay: 0.1, duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
       className="workspace-panel p-5 sm:p-6"
     >
-      <p className="font-mono text-[9px] uppercase tracking-[0.24em] text-neutral-600">
+      <p className="font-mono text-[11.5px] uppercase tracking-[0.24em] text-neutral-500">
         Getting started
       </p>
       <h2

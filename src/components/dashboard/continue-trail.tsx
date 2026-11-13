@@ -16,18 +16,23 @@ export function ContinueTrail({
   apiTrailId,
   onContinued,
   onUploadSource,
+  onStartNewTrail,
 }: {
   apiTrailId: string;
   onContinued: (trail: TrailApi) => void;
   onUploadSource: () => void;
+  /** Build a separate trail from the typed question instead of appending. */
+  onStartNewTrail: (question: string) => void;
 }) {
   const [question, setQuestion] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const inputId = useId();
   const errorId = useId();
+  const hintId = useId();
   const { pending, statusLabel, error, submit, clearError } = useTrailQuestion(
     `/api/trails/${encodeURIComponent(apiTrailId)}/continue`,
   );
+  const canStartNew = question.trim().length >= 3 && !pending;
 
   useEffect(() => {
     if (error) {
@@ -53,11 +58,15 @@ export function ContinueTrail({
     >
       <label
         htmlFor={inputId}
-        className="flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-[0.2em] text-neutral-500"
+        className="flex items-center gap-1.5 font-mono text-[11.5px] uppercase tracking-[0.2em] text-neutral-400"
       >
         <SparkIcon className="size-3" />
         Continue this trail
       </label>
+      <p id={hintId} className="mt-1 text-[13px] leading-4 text-neutral-500">
+        Adds 2–4 steps to the end of this trail. For a different topic, start
+        a new trail.
+      </p>
 
       <div className="mt-2.5 flex items-center gap-2">
         <input
@@ -77,13 +86,13 @@ export function ContinueTrail({
           readOnly={pending}
           aria-disabled={pending}
           aria-invalid={error ? true : undefined}
-          aria-describedby={error ? errorId : undefined}
-          className="h-10 min-w-0 flex-1 rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 text-[12.5px] text-white outline-none transition placeholder:text-neutral-600 focus:border-white/25 aria-disabled:text-neutral-400"
+          aria-describedby={error ? `${hintId} ${errorId}` : hintId}
+          className="h-10 min-w-0 flex-1 rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 text-[14.5px] text-white outline-none transition placeholder:text-neutral-500 focus:border-white/25 aria-disabled:text-neutral-400"
         />
         <button
           type="submit"
           disabled={pending}
-          className="inline-flex h-10 shrink-0 items-center gap-2 rounded-lg bg-white px-3.5 text-[11.5px] font-medium text-neutral-950 transition hover:bg-neutral-200 disabled:cursor-progress disabled:bg-neutral-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+          className="inline-flex h-10 shrink-0 items-center gap-2 rounded-lg bg-white px-3.5 text-[13.5px] font-medium text-neutral-950 transition hover:bg-neutral-200 disabled:cursor-progress disabled:bg-neutral-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
         >
           {pending ? (
             <>
@@ -98,6 +107,15 @@ export function ContinueTrail({
           )}
         </button>
       </div>
+
+      <button
+        type="button"
+        disabled={!canStartNew}
+        onClick={() => onStartNewTrail(question.trim())}
+        className="mt-2 rounded text-[13px] text-neutral-400 underline decoration-white/15 underline-offset-[3px] transition hover:text-white hover:decoration-white/60 disabled:cursor-not-allowed disabled:no-underline disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+      >
+        Start a new trail with this question instead
+      </button>
 
       <span role="status" aria-live="polite" className="sr-only">
         {statusLabel}

@@ -155,6 +155,8 @@ export async function POST(request: Request) {
         document_id: documentId,
         title,
         storage_path: storagePath,
+        source_kind: "note",
+        extraction_method: "note",
       })
       .select("document_id")
       .single();

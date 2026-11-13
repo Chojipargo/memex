@@ -47,7 +47,7 @@ export function TrailMiniGraph({
       viewBox="0 0 180 50"
       fill="none"
       aria-hidden="true"
-      className={`h-12 w-full overflow-visible text-neutral-500 ${className}`}
+      className={`h-12 w-full overflow-visible text-neutral-400 ${className}`}
     >
       {nodes.length > 2 && branch ? (
         <path
@@ -164,7 +164,7 @@ export function AssociativeMap({
         width="760"
         height="310"
         fill={`url(#${patternId})`}
-        className="text-neutral-500"
+        className="text-neutral-400"
       />
 
       {edges.map((edge) => {

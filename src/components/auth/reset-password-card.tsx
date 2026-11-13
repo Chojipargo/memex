@@ -86,16 +86,16 @@ export function ResetPasswordCard() {
   if (done) {
     return (
       <div className="auth-card p-7 sm:p-9">
-        <span className="font-mono text-[10px] uppercase tracking-[0.32em] text-mist-dim">
+        <span className="font-mono text-[12px] uppercase tracking-[0.32em] text-mist-dim">
           memex.ai
         </span>
         <div className="mt-8 grid size-11 place-items-center rounded-full border border-emerald-400/20 bg-emerald-400/[0.08] text-emerald-300/90">
           <CheckIcon />
         </div>
-        <h2 className="mt-5 text-[26px] font-medium tracking-[-0.035em] text-white">
+        <h2 className="mt-5 text-[28px] font-medium tracking-[-0.035em] text-white">
           Password updated
         </h2>
-        <p className="mt-2 text-[13.5px] leading-6 text-mist">
+        <p className="mt-2 text-[15.5px] leading-6 text-mist">
           Your workspace is ready. Continue to your dashboard.
         </p>
         <Link href="/dashboard" className="btn-primary mt-7">
@@ -108,10 +108,10 @@ export function ResetPasswordCard() {
   if (status === "checking") {
     return (
       <div className="auth-card p-7 sm:p-9">
-        <span className="font-mono text-[10px] uppercase tracking-[0.32em] text-mist-dim">
+        <span className="font-mono text-[12px] uppercase tracking-[0.32em] text-mist-dim">
           memex.ai
         </span>
-        <div className="mt-8 flex items-center gap-2.5 text-[13px] text-mist">
+        <div className="mt-8 flex items-center gap-2.5 text-[15px] text-mist">
           <Spinner />
           Verifying your reset link…
         </div>
@@ -122,20 +122,20 @@ export function ResetPasswordCard() {
   if (status === "invalid") {
     return (
       <div className="auth-card p-7 sm:p-9">
-        <span className="font-mono text-[10px] uppercase tracking-[0.32em] text-mist-dim">
+        <span className="font-mono text-[12px] uppercase tracking-[0.32em] text-mist-dim">
           memex.ai
         </span>
-        <h2 className="mt-7 text-[26px] font-medium tracking-[-0.035em] text-white">
+        <h2 className="mt-7 text-[28px] font-medium tracking-[-0.035em] text-white">
           Link expired
         </h2>
-        <p className="mt-2 text-[13.5px] leading-6 text-mist">
+        <p className="mt-2 text-[15.5px] leading-6 text-mist">
           This reset link is invalid or has expired. Request a fresh one to
           continue.
         </p>
         <Link href="/forgot-password" className="btn-primary mt-7">
           Request a new link
         </Link>
-        <p className="mt-6 text-center text-[13px] text-mist">
+        <p className="mt-6 text-center text-[15px] text-mist">
           <Link
             href="/sign-in"
             className="font-medium text-white underline-offset-4 transition hover:underline"
@@ -149,15 +149,15 @@ export function ResetPasswordCard() {
 
   return (
     <div className="auth-card p-7 sm:p-9">
-      <span className="font-mono text-[10px] uppercase tracking-[0.32em] text-mist-dim">
+      <span className="font-mono text-[12px] uppercase tracking-[0.32em] text-mist-dim">
         memex.ai
       </span>
 
       <div className="mt-7">
-        <h2 className="text-[26px] font-medium tracking-[-0.035em] text-white">
+        <h2 className="text-[28px] font-medium tracking-[-0.035em] text-white">
           Choose a new password
         </h2>
-        <p className="mt-1.5 text-[13.5px] text-mist">
+        <p className="mt-1.5 text-[15.5px] text-mist">
           Pick something strong you haven&apos;t used before.
         </p>
       </div>
@@ -203,7 +203,7 @@ export function ResetPasswordCard() {
         {formError ? (
           <div
             role="alert"
-            className="rounded-xl border border-red-400/20 bg-red-500/[0.07] px-3 py-2.5 text-[12.5px] leading-5 text-red-200/90"
+            className="rounded-xl border border-red-400/20 bg-red-500/[0.07] px-3 py-2.5 text-[14.5px] leading-5 text-red-200/90"
           >
             {formError}
           </div>

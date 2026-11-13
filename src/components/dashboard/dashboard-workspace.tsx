@@ -13,6 +13,7 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 
 import { signOut } from "@/app/dashboard/actions";
 import { BrandMark } from "@/components/auth/brand-mark";
+import { CitationDrawer } from "@/components/dashboard/citation-drawer";
 import { CommandPalette } from "@/components/dashboard/command-palette";
 import {
   NoteDetailDrawer,
@@ -21,9 +22,12 @@ import {
 import {
   DashboardHero,
   DEFAULT_HERO_PLACEHOLDER,
+  type HeroHandle,
 } from "@/components/dashboard/hero";
 import { Onboarding } from "@/components/dashboard/onboarding";
+import { ProvenancePill } from "@/components/dashboard/provenance-pill";
 import { ReadyCard, type ReadySource } from "@/components/dashboard/ready-card";
+import { ResearchDialog } from "@/components/dashboard/research-dialog";
 import { SupportDialog } from "@/components/dashboard/support-dialog";
 import { TrailsDrawer } from "@/components/dashboard/trails-drawer";
 import {
@@ -36,6 +40,7 @@ import {
 } from "@/components/dashboard/upload-dialog";
 import {
   ChevronRightIcon,
+  GlobeIcon,
   HelpIcon,
   LinkIcon,
   LogOutIcon,
@@ -68,7 +73,13 @@ import {
   upsertTrail,
 } from "@/lib/trails/to-workspace";
 
-type Overlay = "search" | "trails" | "upload" | "support" | null;
+type Overlay =
+  | "search"
+  | "trails"
+  | "upload"
+  | "research"
+  | "support"
+  | null;
 type UploadTab = "pdf" | "note";
 
 /** Associations are not generated yet; the demo set is no longer rendered. */
@@ -113,23 +124,24 @@ function TrailCard({
       />
 
       <div className="flex items-center gap-2">
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-white/[0.08] bg-white/[0.03] px-2.5 py-1 font-mono text-[8.5px] uppercase tracking-[0.18em] text-neutral-500">
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-white/[0.08] bg-white/[0.03] px-2.5 py-1 font-mono text-[11px] uppercase tracking-[0.18em] text-neutral-400">
           <TrailsIcon className="size-3" />
           trail
         </span>
+        <ProvenancePill provenance={trail.origin ?? "library"} />
         {active ? (
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/[0.08] px-2.5 py-1 font-mono text-[8.5px] uppercase tracking-[0.18em] text-white">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/[0.08] px-2.5 py-1 font-mono text-[11px] uppercase tracking-[0.18em] text-white">
             <span className="size-1 rounded-full bg-white" />
             active
           </span>
         ) : null}
-        <ChevronRightIcon className="ml-auto size-4 text-neutral-600 transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-neutral-300" />
+        <ChevronRightIcon className="ml-auto size-4 text-neutral-500 transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-neutral-300" />
       </div>
 
-      <h3 className="mt-4 text-[15px] font-medium leading-5 tracking-[-0.02em] text-neutral-100">
+      <h3 className="mt-4 text-[17px] font-medium leading-5 tracking-[-0.02em] text-neutral-100">
         {trail.title}
       </h3>
-      <p className="mt-2 line-clamp-2 text-[11.5px] leading-5 text-neutral-500">
+      <p className="mt-2 line-clamp-2 text-[13.5px] leading-5 text-neutral-400">
         {trail.description}
       </p>
 
@@ -137,7 +149,7 @@ function TrailCard({
         <TrailMiniGraph nodes={trail.nodes} active={active} />
       </div>
 
-      <div className="mt-2 flex items-center justify-between gap-3 border-t border-white/[0.055] pt-3 font-mono text-[9px] uppercase tracking-[0.15em] text-neutral-600">
+      <div className="mt-2 flex items-center justify-between gap-3 border-t border-white/[0.055] pt-3 font-mono text-[11.5px] uppercase tracking-[0.15em] text-neutral-500">
         <span>{trail.nodes.length} notes</span>
         <span>{trail.updatedAt}</span>
         <span className={trail.saved ? "text-neutral-400" : ""}>
@@ -165,6 +177,7 @@ export function DashboardWorkspace({
     DEFAULT_HERO_PLACEHOLDER,
   );
   const heroInputRef = useRef<HTMLInputElement>(null);
+  const heroRef = useRef<HeroHandle>(null);
   const reduceMotion = useReducedMotion();
   const [hydrated, setHydrated] = useState(false);
   const [overlay, setOverlay] = useState<Overlay>(null);
@@ -176,6 +189,7 @@ export function DashboardWorkspace({
   const [uploadKey, setUploadKey] = useState(0);
   const [selectedTrailId, setSelectedTrailId] = useState<string | null>(null);
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
+  const [citationNote, setCitationNote] = useState<Note | null>(null);
   const [noteTrailId, setNoteTrailId] = useState<string | null>(null);
   const [noteTransitionDirection, setNoteTransitionDirection] = useState<1 | -1>(
     1,
@@ -301,7 +315,10 @@ export function DashboardWorkspace({
       : null;
 
   const anyOverlay =
-    overlay !== null || selectedTrail !== null || selectedNote !== null;
+    overlay !== null ||
+    selectedTrail !== null ||
+    selectedNote !== null ||
+    citationNote !== null;
 
   useEffect(() => {
     if (!anyOverlay) {
@@ -323,11 +340,19 @@ export function DashboardWorkspace({
         setSelectedTrailId(null);
         setSelectedNoteId(null);
         setNoteTrailId(null);
+        setCitationNote(null);
         setOverlay("search");
         return;
       }
 
       if (event.key === "Escape") {
+        // The citation drawer sits on top of the trail. Close it first so the
+        // active trail and its keyboard position survive the Escape.
+        if (citationNote) {
+          setCitationNote(null);
+          return;
+        }
+
         setOverlay(null);
         setSelectedTrailId(null);
         setSelectedNoteId(null);
@@ -337,12 +362,13 @@ export function DashboardWorkspace({
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [citationNote]);
 
   const openUpload = (tab: UploadTab = "pdf", draft: typeof uploadDraft = null) => {
     setSelectedTrailId(null);
     setSelectedNoteId(null);
     setNoteTrailId(null);
+    setCitationNote(null);
     setUploadTab(tab);
     setUploadDraft(draft);
     setUploadKey((current) => current + 1);
@@ -374,6 +400,7 @@ export function DashboardWorkspace({
 
       setOverlay(null);
       setSelectedTrailId(null);
+      setCitationNote(null);
       setNoteTrailId(contextTrail?.id ?? null);
       setNoteTransitionDirection(1);
       setSelectedNoteId(note.id);
@@ -393,6 +420,7 @@ export function DashboardWorkspace({
     setOverlay(null);
     setSelectedNoteId(null);
     setNoteTrailId(null);
+    setCitationNote(null);
     setTrailSequenceIds(orderedTrails.map((item) => item.id));
     setSelectedTrailId(trail.id);
     setFocusedNodeIndex(0);
@@ -712,6 +740,23 @@ export function DashboardWorkspace({
     input.focus({ preventScroll: true });
   };
 
+  /** Leave the open trail and ask a fresh question through the hero. */
+  const startNewQuestion = (question?: string) => {
+    setSelectedTrailId(null);
+    setSelectedNoteId(null);
+    setNoteTrailId(null);
+    setCitationNote(null);
+
+    // Wait for the trail stage to close (and body scroll to unlock) first.
+    window.setTimeout(() => {
+      if (question) {
+        heroRef.current?.ask(question);
+      }
+
+      focusHero();
+    }, 60);
+  };
+
   /** Merge an API trail into the workspace, opening it when asked. */
   const applyGeneratedTrail = (api: TrailApi, open: boolean) => {
     const mapped = trailToWorkspace(api);
@@ -751,7 +796,9 @@ export function DashboardWorkspace({
     notify("Building a trail…", 60_000);
 
     try {
-      const result = await postTrailQuestion("/api/trails", question);
+      const result = await postTrailQuestion("/api/trails", question, {
+        onProgress: (progress) => notify(progress.message, 60_000),
+      });
 
       if (!result.ok) {
         notify(result.message);
@@ -805,6 +852,11 @@ export function DashboardWorkspace({
       onClick: () => setOverlay("trails"),
     },
     {
+      label: "Research",
+      icon: GlobeIcon,
+      onClick: () => setOverlay("research"),
+    },
+    {
       label: "Upload",
       icon: UploadIcon,
       onClick: () => openUpload("pdf"),
@@ -830,7 +882,7 @@ export function DashboardWorkspace({
               <BrandMark />
             </Link>
             <span className="hidden h-5 w-px bg-white/[0.08] xl:block" />
-            <span className="hidden font-mono text-[9px] uppercase tracking-[0.24em] text-neutral-600 xl:block">
+            <span className="hidden font-mono text-[11.5px] uppercase tracking-[0.24em] text-neutral-500 xl:block">
               associative workspace
             </span>
           </div>
@@ -850,7 +902,7 @@ export function DashboardWorkspace({
                     onClick={action.onClick}
                     title={action.label}
                     aria-label={action.label}
-                    className={`group inline-flex h-9 items-center gap-2 rounded-xl border px-2.5 text-[11.5px] font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 sm:px-3 ${
+                    className={`group inline-flex h-9 items-center gap-2 rounded-xl border px-2.5 text-[13.5px] font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 sm:px-3 ${
                       action.emphasized
                         ? "border-white/[0.16] bg-white/[0.07] text-white hover:border-white/25 hover:bg-white/[0.11]"
                         : "border-white/[0.08] bg-white/[0.025] text-neutral-400 hover:border-white/[0.16] hover:bg-white/[0.06] hover:text-white"
@@ -859,7 +911,7 @@ export function DashboardWorkspace({
                     <Icon className="size-4" />
                     <span className="hidden md:inline">{action.label}</span>
                     {action.kbd ? (
-                      <kbd className="hidden rounded border border-white/10 bg-white/[0.04] px-1 py-0.5 font-mono text-[8px] text-neutral-500 lg:inline">
+                      <kbd className="hidden rounded border border-white/10 bg-white/[0.04] px-1 py-0.5 font-mono text-[10.5px] text-neutral-400 lg:inline">
                         {action.kbd}
                       </kbd>
                     ) : null}
@@ -873,24 +925,24 @@ export function DashboardWorkspace({
             <details className="group relative">
               <summary
                 aria-label="Account menu"
-                className="flex size-9 cursor-pointer list-none items-center justify-center rounded-xl border border-white/[0.09] bg-white/[0.035] text-[11px] font-medium text-neutral-300 transition hover:border-white/[0.18] hover:bg-white/[0.07] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 [&::-webkit-details-marker]:hidden"
+                className="flex size-9 cursor-pointer list-none items-center justify-center rounded-xl border border-white/[0.09] bg-white/[0.035] text-[13px] font-medium text-neutral-300 transition hover:border-white/[0.18] hover:bg-white/[0.07] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 [&::-webkit-details-marker]:hidden"
               >
                 M
               </summary>
 
               <div className="absolute right-0 top-[calc(100%+0.65rem)] w-64 rounded-2xl border border-white/[0.1] bg-ink-900/95 p-2 shadow-[0_30px_80px_-25px_rgba(0,0,0,1)] backdrop-blur-2xl">
                 <div className="rounded-xl px-3 py-2.5">
-                  <p className="font-mono text-[8.5px] uppercase tracking-[0.22em] text-neutral-600">
+                  <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-neutral-500">
                     Signed in as
                   </p>
-                  <div className="mt-1.5 truncate text-[11.5px] text-neutral-300">
+                  <div className="mt-1.5 truncate text-[13.5px] text-neutral-300">
                     {accountSlot}
                   </div>
                 </div>
                 <form action={signOut}>
                   <button
                     type="submit"
-                    className="mt-1 flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-[11.5px] text-neutral-400 transition hover:bg-white/[0.055] hover:text-white"
+                    className="mt-1 flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-[13.5px] text-neutral-400 transition hover:bg-white/[0.055] hover:text-white"
                   >
                     <LogOutIcon className="size-4" />
                     Sign out
@@ -920,6 +972,7 @@ export function DashboardWorkspace({
         </AnimatePresence>
 
         <DashboardHero
+          controlRef={heroRef}
           inputRef={heroInputRef}
           placeholder={heroPlaceholder}
           onTrailBuilt={(trail) => applyGeneratedTrail(trail, true)}
@@ -927,10 +980,11 @@ export function DashboardWorkspace({
             openComposer(prompt ? { content: prompt } : undefined)
           }
           onUploadSource={() => openUpload("pdf")}
+          onResearch={() => setOverlay("research")}
           onSearch={() => setOverlay("search")}
         />
 
-        <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 pb-12 text-[10.5px] text-neutral-600 sm:pb-14">
+        <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 pb-12 text-[13px] text-neutral-500 sm:pb-14">
           {[
             { label: "notes", count: notes.length },
             { label: "trails", count: trails.length },
@@ -975,7 +1029,7 @@ export function DashboardWorkspace({
             <section>
               <div className="mb-4 flex items-end justify-between gap-4">
                 <div>
-                  <p className="font-mono text-[9px] uppercase tracking-[0.26em] text-neutral-600">
+                  <p className="font-mono text-[11.5px] uppercase tracking-[0.26em] text-neutral-500">
                     Continue where you left off
                   </p>
                   <h2 className="mt-2 text-[1.15rem] font-semibold tracking-[-0.025em] text-white">
@@ -985,7 +1039,7 @@ export function DashboardWorkspace({
                 <button
                   type="button"
                   onClick={() => setOverlay("trails")}
-                  className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] text-neutral-500 transition hover:text-white"
+                  className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[13px] text-neutral-400 transition hover:text-white"
                 >
                   View archive
                   <ChevronRightIcon className="size-3.5" />
@@ -1015,14 +1069,14 @@ export function DashboardWorkspace({
             >
               <div className="flex flex-wrap items-end justify-between gap-3">
                 <div>
-                  <p className="font-mono text-[9px] uppercase tracking-[0.24em] text-neutral-600">
+                  <p className="font-mono text-[11.5px] uppercase tracking-[0.24em] text-neutral-500">
                     Associative index
                   </p>
                   <h2 className="mt-2 text-[1.05rem] font-semibold tracking-[-0.02em] text-white">
                     How your thoughts connect
                   </h2>
                 </div>
-                <p className="text-[10.5px] text-neutral-600">
+                <p className="text-[13px] text-neutral-500">
                   Hover a note to trace its edges. Click to open.
                 </p>
               </div>
@@ -1036,11 +1090,11 @@ export function DashboardWorkspace({
                   />
                 </div>
               </div>
-              <p className="mt-1 text-[10px] text-neutral-600 lg:hidden">
+              <p className="mt-1 text-[12px] text-neutral-500 lg:hidden">
                 Swipe to explore the full map.
               </p>
 
-              <div className="mt-2 flex flex-wrap items-center gap-4 border-t border-white/[0.06] pt-3 font-mono text-[8.5px] uppercase tracking-[0.16em] text-neutral-600">
+              <div className="mt-2 flex flex-wrap items-center gap-4 border-t border-white/[0.06] pt-3 font-mono text-[11px] uppercase tracking-[0.16em] text-neutral-500">
                 <span className="flex items-center gap-2">
                   <span className="h-px w-5 bg-neutral-400/50" />
                   strong association
@@ -1071,14 +1125,14 @@ export function DashboardWorkspace({
             >
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="font-mono text-[9px] uppercase tracking-[0.24em] text-neutral-600">
+                  <p className="font-mono text-[11.5px] uppercase tracking-[0.24em] text-neutral-500">
                     Quick access
                   </p>
                   <h2 className="mt-2 text-[1rem] font-semibold tracking-[-0.02em] text-white">
                     Pinned notes
                   </h2>
                 </div>
-                <span className="grid size-8 place-items-center rounded-lg border border-white/[0.08] bg-white/[0.03] text-neutral-500">
+                <span className="grid size-8 place-items-center rounded-lg border border-white/[0.08] bg-white/[0.03] text-neutral-400">
                   <PinIcon className="size-4" />
                 </span>
               </div>
@@ -1094,13 +1148,13 @@ export function DashboardWorkspace({
                     >
                       <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-neutral-400 transition group-hover:bg-white" />
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[12px] font-medium text-neutral-200 transition group-hover:text-white">
+                        <span className="block truncate text-[14px] font-medium text-neutral-200 transition group-hover:text-white">
                           {note.title}
                         </span>
-                        <span className="mt-1 block line-clamp-2 text-[10.5px] leading-4 text-neutral-500">
+                        <span className="mt-1 block line-clamp-2 text-[13px] leading-4 text-neutral-400">
                           {note.excerpt}
                         </span>
-                        <span className="mt-1.5 block font-mono text-[8.5px] uppercase tracking-[0.14em] text-neutral-600">
+                        <span className="mt-1.5 block font-mono text-[11px] uppercase tracking-[0.14em] text-neutral-500">
                           {note.tag}
                         </span>
                       </span>
@@ -1108,8 +1162,8 @@ export function DashboardWorkspace({
                   ))
                 ) : (
                   <div className="rounded-xl border border-dashed border-white/[0.08] px-4 py-6 text-center">
-                    <PinIcon className="mx-auto size-4 text-neutral-600" />
-                    <p className="mt-2 text-[11.5px] text-neutral-500">
+                    <PinIcon className="mx-auto size-4 text-neutral-500" />
+                    <p className="mt-2 text-[13.5px] text-neutral-400">
                       Pin a note from any trail to keep it close.
                     </p>
                   </div>
@@ -1126,14 +1180,14 @@ export function DashboardWorkspace({
             >
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="font-mono text-[9px] uppercase tracking-[0.24em] text-neutral-600">
+                  <p className="font-mono text-[11.5px] uppercase tracking-[0.24em] text-neutral-500">
                     Nearby
                   </p>
                   <h2 className="mt-2 text-[1rem] font-semibold tracking-[-0.02em] text-white">
                     Active associations
                   </h2>
                 </div>
-                <span className="grid size-8 place-items-center rounded-lg border border-white/[0.08] bg-white/[0.03] text-neutral-500">
+                <span className="grid size-8 place-items-center rounded-lg border border-white/[0.08] bg-white/[0.03] text-neutral-400">
                   <LinkIcon className="size-4" />
                 </span>
               </div>
@@ -1146,12 +1200,12 @@ export function DashboardWorkspace({
                     onClick={() => openNote(from)}
                     className="group w-full rounded-xl border border-white/[0.055] bg-white/[0.018] p-3 text-left transition hover:border-white/[0.13] hover:bg-white/[0.038]"
                   >
-                    <div className="flex items-center gap-2 text-[10.5px] text-neutral-400">
+                    <div className="flex items-center gap-2 text-[13px] text-neutral-400">
                       <span className="truncate">{from.title}</span>
-                      <LinkIcon className="size-3 shrink-0 text-neutral-600" />
+                      <LinkIcon className="size-3 shrink-0 text-neutral-500" />
                       <span className="truncate">{to.title}</span>
                     </div>
-                    <p className="mt-1.5 line-clamp-2 text-[10px] leading-4 text-neutral-600">
+                    <p className="mt-1.5 line-clamp-2 text-[12px] leading-4 text-neutral-500">
                       {association.hint}
                     </p>
                     <div className="mt-2.5 flex items-center gap-2">
@@ -1161,7 +1215,7 @@ export function DashboardWorkspace({
                           style={{ width: `${association.strength}%` }}
                         />
                       </span>
-                      <span className="font-mono text-[8.5px] text-neutral-600">
+                      <span className="font-mono text-[11px] text-neutral-500">
                         {association.strength}%
                       </span>
                     </div>
@@ -1172,7 +1226,7 @@ export function DashboardWorkspace({
               <button
                 type="button"
                 onClick={() => openComposer()}
-                className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-white/[0.09] px-3 py-2.5 text-[11px] text-neutral-500 transition hover:border-white/[0.17] hover:bg-white/[0.025] hover:text-neutral-200"
+                className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-white/[0.09] px-3 py-2.5 text-[13px] text-neutral-400 transition hover:border-white/[0.17] hover:bg-white/[0.025] hover:text-neutral-200"
               >
                 <PlusIcon className="size-3.5" />
                 Weave a new connection
@@ -1188,14 +1242,14 @@ export function DashboardWorkspace({
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="font-mono text-[9px] uppercase tracking-[0.24em] text-neutral-600">
+                  <p className="font-mono text-[11.5px] uppercase tracking-[0.24em] text-neutral-500">
                     Your sources
                   </p>
                   <h2 className="mt-2 text-[1rem] font-semibold tracking-[-0.02em] text-white">
                     Library
                   </h2>
                 </div>
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-white/[0.08] bg-white/[0.03] px-2 py-1 font-mono text-[8px] uppercase tracking-[0.16em] text-neutral-500">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-white/[0.08] bg-white/[0.03] px-2 py-1 font-mono text-[10.5px] uppercase tracking-[0.16em] text-neutral-400">
                   <span className="size-1 rounded-full bg-white/60" />
                   private
                 </span>
@@ -1204,8 +1258,8 @@ export function DashboardWorkspace({
               <div className="mt-3">{librarySlot}</div>
 
               <div className="mt-3 flex items-center gap-2 border-t border-white/[0.06] pt-3">
-                <SparkIcon className="size-3 text-neutral-600" />
-                <p className="truncate font-mono text-[8.5px] uppercase tracking-[0.13em] text-neutral-600">
+                <SparkIcon className="size-3 text-neutral-500" />
+                <p className="truncate font-mono text-[11px] uppercase tracking-[0.13em] text-neutral-500">
                   {embeddingLabel}
                 </p>
               </div>
@@ -1215,10 +1269,10 @@ export function DashboardWorkspace({
         )}
 
         <footer className="mt-14 flex flex-col items-start justify-between gap-3 border-t border-white/[0.055] pt-5 sm:flex-row sm:items-center">
-          <p className="text-[10.5px] text-neutral-600">
+          <p className="text-[13px] text-neutral-500">
             memex.ai · associative memory · private by default
           </p>
-          <p className="font-mono text-[8.5px] uppercase tracking-[0.18em] text-neutral-700">
+          <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-neutral-500">
             after Vannevar Bush, 1945
           </p>
         </footer>
@@ -1236,6 +1290,7 @@ export function DashboardWorkspace({
         onOpenTrails={() => setOverlay("trails")}
         onSupport={() => setOverlay("support")}
         onBuildTrail={handleBuildTrail}
+        onResearch={() => setOverlay("research")}
       />
 
       <TrailsDrawer
@@ -1263,6 +1318,18 @@ export function DashboardWorkspace({
         onNotify={notify}
       />
 
+      <ResearchDialog
+        open={overlay === "research"}
+        onClose={() => setOverlay(null)}
+        onTrailBuilt={(trail) => {
+          applyGeneratedTrail(trail, true);
+          notify(
+            `Researched “${trail.title}” with ${trail.steps.length} sourced steps.`,
+          );
+        }}
+        onUploadSource={() => openUpload("pdf")}
+      />
+
       <SupportDialog
         open={overlay === "support"}
         onClose={() => setOverlay(null)}
@@ -1285,7 +1352,9 @@ export function DashboardWorkspace({
         onOpenNote={openNote}
         onBranch={branchFromNode}
         onTrailContinued={handleTrailContinued}
+        onNewQuestion={startNewQuestion}
         onUploadSource={() => openUpload("pdf")}
+        onOpenCitation={setCitationNote}
       />
 
       <NoteDetailDrawer
@@ -1304,6 +1373,12 @@ export function DashboardWorkspace({
         onNextNote={() => navigateNote(1)}
         onTogglePin={togglePin}
         onBranch={branchFromNote}
+        onOpenCitation={setCitationNote}
+      />
+
+      <CitationDrawer
+        note={citationNote}
+        onClose={() => setCitationNote(null)}
       />
 
       <div
@@ -1318,7 +1393,7 @@ export function DashboardWorkspace({
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 8, scale: 0.98 }}
               transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
-              className="rounded-full border border-white/[0.12] bg-ink-900/90 px-4 py-2 text-[11.5px] text-neutral-200 shadow-[0_20px_60px_-20px_rgba(0,0,0,1)] backdrop-blur-xl"
+              className="rounded-full border border-white/[0.12] bg-ink-900/90 px-4 py-2 text-[13.5px] text-neutral-200 shadow-[0_20px_60px_-20px_rgba(0,0,0,1)] backdrop-blur-xl"
             >
               {toast}
             </motion.div>

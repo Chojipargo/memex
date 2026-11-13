@@ -1,3 +1,5 @@
+import type { Provenance, SourceOrigin } from "@/lib/rag/types";
+
 export type NoteKind = "thought" | "quote" | "question" | "source";
 
 export type Note = {
@@ -10,6 +12,18 @@ export type Note = {
   updatedAt: string;
   pinned: boolean;
   source?: string;
+  /** Set on notes that cite a library chunk (generated trail steps). */
+  chunkId?: number;
+  /** AI summary of the cited passage. */
+  gist?: string;
+  /** Verified verbatim key quote from the cited passage. */
+  quote?: string;
+  /** Personal library or web research; older cached notes default to library. */
+  sourceOrigin?: SourceOrigin;
+  sourceUrl?: string;
+  sourceDomain?: string;
+  sourceProvider?: string;
+  retrievedAt?: string;
 };
 
 export type TrailNode = {
@@ -18,6 +32,7 @@ export type TrailNode = {
   label: string;
   kind: NoteKind;
   relation: string;
+  sourceOrigin?: SourceOrigin;
 };
 
 export type Trail = {
@@ -27,6 +42,8 @@ export type Trail = {
   updatedAt: string;
   saved: boolean;
   nodes: TrailNode[];
+  /** Derived from the trail's steps when it was generated. */
+  origin?: Provenance;
 };
 
 export type Association = {
