@@ -69,6 +69,7 @@ All keys except the two `NEXT_PUBLIC_` values are **server-only**. Never expose 
 | `ANTHROPIC_API_KEY` | Yes | Writing trails and continuations |
 | `TAVILY_API_KEY` | For web research | Automatic web fallback and "Research the web". Library-only trails and pasted-URL extraction work without it |
 | `TRAIL_COVERAGE_THRESHOLD` | No (`0.6`) | How strong a library match must be before skipping the web. Raise it to research more often |
+| `TRAIL_STEP_WEIGHT` | No (`0.5`) | When continuing a trail, how much the next step is chosen for being near the current passage (`1`) versus matching the question (`0`) |
 | `CLAUDE_TRAIL_MODEL` | No (`claude-sonnet-5-5`) | Model that writes trails |
 | `CLAUDE_TRAIL_FALLBACK_MODEL` | No (`claude-haiku-5-5`) | Used when the main model is overloaded; `none` disables it |
 | `GEMINI_EMBEDDING_MODEL` | No (`gemini-embedding-001`) | Embedding model |
@@ -120,6 +121,8 @@ All routes require a signed-in session and return JSON errors (`401` when signed
 | `GET/POST/DELETE /api/trails/:id/publish` | Check, publish (or refresh), or unpublish a trail on Explore |
 | `POST /api/trails/:id/rewrite/preview` | Preview an insert, drop, or reorder. Body: `{ chunkIds }`. Returns new connections with existing or Claude-suggested reasons |
 | `POST /api/trails/:id/rewrite` | Apply it. Body: `{ expectedChunkIds, steps: [{ chunkId, reason?, reasonOrigin? }] }` |
+| `POST /api/trails/:id/proposals` | Suggest alternative next steps from where a trail ends, each with a reason. Body: `{ question? }` |
+| `POST /api/trails/:id/proposals/accept` | Continue with one. Body: `{ fromChunkId, chunkId, reason, reasonEdited, gist?, quote? }` |
 | `PATCH /api/trails/:id/steps/:position` | Set or clear your annotation on a step |
 | `POST /api/trails/:id/side-trails` | Start a side trail at a step. Body: `{ position }` |
 | `GET /api/chunks/:id/backlinks` | Links tied to a passage and the trails that pass through it |
