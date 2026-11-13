@@ -30,20 +30,6 @@ export function GoogleIcon({ className = "size-[18px]", ...props }: IconProps) {
   );
 }
 
-export function AppleIcon({ className = "size-[18px]", ...props }: IconProps) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="currentColor"
-      aria-hidden="true"
-      className={className}
-      {...props}
-    >
-      <path d="M17.05 12.54c-.02-2.02 1.65-2.99 1.72-3.04-.94-1.37-2.4-1.56-2.92-1.58-1.24-.13-2.42.73-3.05.73-.63 0-1.6-.71-2.63-.69-1.35.02-2.6.79-3.29 2-1.4 2.43-.36 6.03 1.01 8 0 0 .67.97 1.47 1.98.71.9 1.3 1.54 2.36 1.54.94 0 1.3-.6 2.44-.6 1.14 0 1.46.6 2.46.58 1.02-.02 1.67-.93 2.34-1.83.74-1.06 1.04-2.09 1.06-2.14-.02-.01-2.03-.78-2.05-3.09ZM15.03 6.6c.53-.64.89-1.53.79-2.42-.79.03-1.74.53-2.29 1.17-.49.56-.92 1.47-.8 2.34.88.07 1.77-.45 2.3-1.09Z" />
-    </svg>
-  );
-}
-
 export function MailIcon({ className = "size-[18px]", ...props }: IconProps) {
   return (
     <svg

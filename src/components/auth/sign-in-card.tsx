@@ -12,7 +12,7 @@ import { Field } from "./field";
 import { OAuthErrorBanner } from "./oauth-error-banner";
 import { SocialAuth } from "./social-auth";
 
-type Provider = "google" | "apple";
+type Provider = "google";
 
 export function SignInCard() {
   const router = useRouter();
