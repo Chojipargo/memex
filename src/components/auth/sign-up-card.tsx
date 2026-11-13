@@ -17,7 +17,7 @@ import { Spinner } from "../ui/spinner";
 import { Field } from "./field";
 import { SocialAuth } from "./social-auth";
 
-type Provider = "google" | "apple";
+type Provider = "google";
 
 export function SignUpCard() {
   const router = useRouter();

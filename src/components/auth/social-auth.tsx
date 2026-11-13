@@ -1,9 +1,9 @@
 "use client";
 
 import { Spinner } from "../ui/spinner";
-import { AppleIcon, GoogleIcon } from "../ui/icons";
+import { GoogleIcon } from "../ui/icons";
 
-type Provider = "google" | "apple";
+type Provider = "google";
 
 type SocialAuthProps = {
   busy: boolean;
@@ -31,17 +31,6 @@ export function SocialAuth({
           <GoogleIcon />
         )}
         <span>Sign in with Google</span>
-      </button>
-
-      <button
-        type="button"
-        onClick={() => onProvider("apple")}
-        disabled={busy}
-        aria-busy={pendingProvider === "apple"}
-        className="btn-social w-full border border-white/15 bg-black text-white hover:border-white/25 hover:bg-[#0e0e0e]"
-      >
-        {pendingProvider === "apple" ? <Spinner /> : <AppleIcon />}
-        <span>Sign in with Apple</span>
       </button>
     </div>
   );

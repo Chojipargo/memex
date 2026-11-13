@@ -7,7 +7,16 @@ import {
   type TrailNode,
 } from "@/lib/dashboard/data";
 
-export const WORKSPACE_STORAGE_KEY = "memex.workspace.v1";
+/**
+ * Pre-scoping cache key. It was shared by every account that signed in on the
+ * same browser, so its contents cannot be attributed to anyone and are dropped.
+ */
+export const LEGACY_WORKSPACE_STORAGE_KEY = "memex.workspace.v1";
+
+/** The local workspace cache is per account so accounts never see each other's trails. */
+export function workspaceStorageKey(userId: string): string {
+  return `memex.workspace.v2:${userId}`;
+}
 
 export type StoredWorkspace = {
   notes: Note[];
