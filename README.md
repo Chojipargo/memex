@@ -21,6 +21,7 @@ flowchart LR
 - **Bring your own sources.** Upload PDFs and images (scanned pages are OCR'd in your browser and shown for review first), import PowerPoint decks with speaker notes, write or paste notes, or point it at a URL.
 - **Trails, not chat.** Each answer is 3–8 ordered steps. Every step cites a real passage, shows a key quote that has been checked against the source text, gives a one-to-two sentence AI summary, and can expand to the full surrounding passage.
 - **Library first, web when needed.** Questions are answered from your library when it has strong matches. Otherwise memex searches the web (Tavily), stores the pages as sources, and labels every step `In Your Library`, `Web Synthesized`, or `Hybrid`.
+- **Learn from others.** Share a trail on **Explore** (`/explore`) and browse the most-followed public trails. Each public step shows its note, summary, key quote, and source title, never your full private passages. "Ask in my library" rebuilds the same question from your own sources.
 - **Keep going.** Ask a follow-up to extend a trail, branch a new trail from any step, or revisit earlier trails from the trails drawer and command palette (`Ctrl/⌘ K`).
 - **Private by default.** Every table, file, and search is scoped to the signed-in user with Postgres row-level security. No `service_role` key is used anywhere.
 
@@ -114,6 +115,8 @@ All routes require a signed-in session and return JSON errors (`401` when signed
 | `POST /api/documents/note` | Save and index a note |
 | `POST /api/trails` | Build a trail. Body: `{ question, mode?: "auto" \| "research", url? }`. Streams NDJSON progress, then the trail |
 | `GET /api/trails` | Your 50 most recent trails |
+| `GET/POST/DELETE /api/trails/:id/publish` | Check, publish (or refresh), or unpublish a trail on Explore |
+| `POST /api/explore/:id/learn` | Count the signed-in reader as a learner of a public trail |
 | `GET /api/trails/[id]` | One trail with its cited passages |
 | `POST /api/trails/[id]/continue` | Append 2–4 steps for a follow-up question. Streams like `POST /api/trails` |
 | `GET /api/chunks/[id]/context` | A cited passage with the passages before and after it |

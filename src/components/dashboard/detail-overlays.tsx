@@ -8,6 +8,7 @@ import {
   originProvenance,
   ProvenancePill,
 } from "@/components/dashboard/provenance-pill";
+import { ShareTrail } from "@/components/dashboard/share-trail";
 import { TrailStepCard } from "@/components/dashboard/trail-step-card";
 import { CenteredStage, DrawerFrame } from "@/components/dashboard/overlay";
 import {
@@ -375,6 +376,13 @@ export function TrailDetailDialog({
             >
               {trail.saved ? "Saved to archive" : "Save this trail"}
             </button>
+            {apiTrailId ? (
+              <ShareTrail
+                key={apiTrailId}
+                apiTrailId={apiTrailId}
+                stepCount={trail.nodes.length}
+              />
+            ) : null}
             </div>
             <button
               type="button"

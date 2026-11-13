@@ -39,6 +39,7 @@ import {
   type NoteCreated,
 } from "@/components/dashboard/upload-dialog";
 import {
+  BookIcon,
   ChevronRightIcon,
   GlobeIcon,
   HelpIcon,
@@ -312,6 +313,33 @@ export function DashboardWorkspace({
       );
     }
   }, [activeTrailId, hydrated, notes, notify, storageKey, trails]);
+
+  // "Ask in my library" on a public trail links here with ?ask=<question>.
+  // Build that trail once the workspace (and the hero) is ready, then drop
+  // the parameters so a refresh doesn't ask again.
+  const askedFromUrlRef = useRef(false);
+
+  useEffect(() => {
+    if (!hydrated || askedFromUrlRef.current) {
+      return;
+    }
+
+    askedFromUrlRef.current = true;
+    const url = new URL(window.location.href);
+    const question = url.searchParams.get("ask")?.trim().slice(0, 500) ?? "";
+
+    if (!url.searchParams.has("ask")) {
+      return;
+    }
+
+    url.searchParams.delete("ask");
+    url.searchParams.delete("from");
+    window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
+
+    if (question.length >= 3) {
+      heroRef.current?.ask(question);
+    }
+  }, [hydrated]);
 
   const selectedTrail = selectedTrailId
     ? (trails.find((trail) => trail.id === selectedTrailId) ?? null)
@@ -912,6 +940,11 @@ export function DashboardWorkspace({
       onClick: () => setOverlay("research"),
     },
     {
+      label: "Explore",
+      icon: BookIcon,
+      href: "/explore",
+    },
+    {
       label: "Upload",
       icon: UploadIcon,
       onClick: () => openUpload("pdf"),
@@ -949,6 +982,26 @@ export function DashboardWorkspace({
             >
               {navActions.map((action) => {
                 const Icon = action.icon;
+                const className = `group inline-flex h-9 items-center gap-2 rounded-xl border px-2.5 text-[13.5px] font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 sm:px-3 ${
+                  action.emphasized
+                    ? "border-white/[0.16] bg-white/[0.07] text-white hover:border-white/25 hover:bg-white/[0.11]"
+                    : "border-white/[0.08] bg-white/[0.025] text-neutral-400 hover:border-white/[0.16] hover:bg-white/[0.06] hover:text-white"
+                }`;
+
+                if (action.href) {
+                  return (
+                    <Link
+                      key={action.label}
+                      href={action.href}
+                      title={action.label}
+                      aria-label={action.label}
+                      className={className}
+                    >
+                      <Icon className="size-4" />
+                      <span className="hidden md:inline">{action.label}</span>
+                    </Link>
+                  );
+                }
 
                 return (
                   <button
@@ -957,11 +1010,7 @@ export function DashboardWorkspace({
                     onClick={action.onClick}
                     title={action.label}
                     aria-label={action.label}
-                    className={`group inline-flex h-9 items-center gap-2 rounded-xl border px-2.5 text-[13.5px] font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 sm:px-3 ${
-                      action.emphasized
-                        ? "border-white/[0.16] bg-white/[0.07] text-white hover:border-white/25 hover:bg-white/[0.11]"
-                        : "border-white/[0.08] bg-white/[0.025] text-neutral-400 hover:border-white/[0.16] hover:bg-white/[0.06] hover:text-white"
-                    }`}
+                    className={className}
                   >
                     <Icon className="size-4" />
                     <span className="hidden md:inline">{action.label}</span>

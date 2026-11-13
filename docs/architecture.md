@@ -123,8 +123,18 @@ Migrations in `supabase/migrations/`, applied in order:
 | `20261110120000_trail_step_digest.sql` | `gist`, `quote_start`, `quote_end` on steps; `get_chunk_neighbors` |
 | `20261111120000_hybrid_rag.sql` | Source provenance columns on `documents`; `match_documents` |
 | `20261113120000_match_documents_recall.sql` | Wider (`ef_search` 400) and, on pgvector 0.8+, iterative HNSW scans in `match_documents`, so filtering to the caller's rows doesn't starve results when many users share the index |
+| `20261113150000_published_trails.sql` | `published_trails` (public trail snapshots), `published_trail_learners`, and the `publish_trail` / `unpublish_trail` / `get_trail_publication` / `record_trail_learner` functions |
 
-Every table has owner-scoped RLS (`user_id = auth.uid()`, or through the owning document for `chunks`). The RPC functions are `security invoker` and check ownership of the trail and every cited chunk themselves.
+Every private table has owner-scoped RLS (`user_id = auth.uid()`, or through the owning document for `chunks`). The RPC functions are `security invoker` and check ownership of the trail and every cited chunk themselves. The exception is published trails (below).
+
+## Public trails (Explore)
+
+`/explore` lists trails readers have chosen to share, most-learned first (`?sort=recent` for newest), and `/explore/[id]` shows one. Both pages work signed out.
+
+- **Publishing** (`POST /api/trails/[id]/publish`, `DELETE` to unpublish, `GET` for status) is opt-in per trail from the trail dialog's "Share on Explore" button. It stores a **snapshot** in `published_trails.steps`: each step's note, gist, verified key quote, source title and page, and, for web sources only, the URL and domain. Full passages of uploads and notes are never copied, and no policy on `documents` or `chunks` is loosened. Continuing a trail doesn't change its public copy until the owner chooses "Update public copy".
+- **Popularity** is `learner_count`: the number of distinct signed-in readers, other than the author, who opened the trail (`POST /api/explore/[id]/learn`). Which readers opened a trail is never exposed, only the count.
+- **Writes** go through `security definer` functions that check `auth.uid()` themselves. `published_trails` is select-only for `anon` and `authenticated`, and `published_trail_learners` has no grants at all, so clients can't forge a snapshot or inflate a count through PostgREST.
+- **"Ask in my library"** links to `/dashboard?ask=<question>`. The dashboard builds that trail from the reader's own sources once the workspace loads, then strips the parameters from the URL.
 
 If you change `EMBEDDING_DIMENSIONS`, update `vector(1536)` in the migrations and re-embed all documents. `gemini-embedding-001` supports 128–3072 dimensions.
 
