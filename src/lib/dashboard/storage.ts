@@ -1,6 +1,4 @@
 import {
-  seedNotes,
-  seedTrails,
   type Note,
   type NoteKind,
   type Trail,
@@ -51,8 +49,12 @@ export type StoredWorkspace = {
 };
 
 const NOTE_KINDS = new Set<NoteKind>(["thought", "quote", "question", "source"]);
-const SEED_NOTE_IDS = new Set(seedNotes.map((note) => note.id));
-const SEED_TRAIL_IDS = new Set(seedTrails.map((trail) => trail.id));
+// Real notes are uploaded documents (uuid ids) or cited passages
+// ("chunk-<id>"). Anything else is demo data from older versions.
+const REAL_NOTE_ID = /^(?:chunk-\d+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+// Only generated trails are stored in the database; hand-built and demo
+// trails from older versions are dropped.
+const GENERATED_TRAIL_ID = /^gen-/;
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -151,6 +153,10 @@ function parseNode(value: unknown): TrailNode | null {
     ...(isSourceOrigin(r.sourceOrigin)
       ? { sourceOrigin: r.sourceOrigin }
       : {}),
+    ...(isString(r.linkId) && r.linkId ? { linkId: r.linkId } : {}),
+    ...(isString(r.annotation) && r.annotation
+      ? { annotation: r.annotation }
+      : {}),
   };
 }
 
@@ -169,6 +175,11 @@ function parseTrail(value: unknown): Trail | null {
     return null;
   }
 
+  const rawParent = asRecord(r.parent);
+  const parent =
+    rawParent && isString(rawParent.apiTrailId) && isString(rawParent.title)
+      ? { apiTrailId: rawParent.apiTrailId, title: rawParent.title }
+      : null;
   const nodes: TrailNode[] = [];
 
   for (const rawNode of r.nodes) {
@@ -189,12 +200,13 @@ function parseTrail(value: unknown): Trail | null {
     saved: r.saved,
     nodes,
     ...(isProvenance(r.origin) ? { origin: r.origin } : {}),
+    ...(parent ? { parent } : {}),
   };
 }
 
 /**
- * Read the cached workspace. Malformed items are skipped, and the demo seed
- * notes and trails that older versions stored are filtered out.
+ * Read the cached workspace. Malformed items are skipped, and the demo and
+ * hand-built notes and trails that older versions stored are filtered out.
  */
 export function readStoredWorkspace(raw: string | null): StoredWorkspace | null {
   if (!raw) {
@@ -217,11 +229,11 @@ export function readStoredWorkspace(raw: string | null): StoredWorkspace | null 
 
   const notes = record.notes
     .map(parseNote)
-    .filter((note): note is Note => note !== null && !SEED_NOTE_IDS.has(note.id));
+    .filter((note): note is Note => note !== null && REAL_NOTE_ID.test(note.id));
   const trails = record.trails
     .map(parseTrail)
     .filter(
-      (trail): trail is Trail => trail !== null && !SEED_TRAIL_IDS.has(trail.id),
+      (trail): trail is Trail => trail !== null && GENERATED_TRAIL_ID.test(trail.id),
     );
   const activeTrailId =
     isString(record.activeTrailId) &&

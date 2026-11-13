@@ -58,7 +58,6 @@ import {
   type Association,
   type Note,
   type Trail,
-  type TrailNode,
 } from "@/lib/dashboard/data";
 import {
   LEGACY_WORKSPACE_STORAGE_KEY,
@@ -72,7 +71,13 @@ import {
   LOCAL_NOTE_BODY_MAX_CHARS,
 } from "@/lib/ingestion/constants";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
-import { postTrailQuestion, type TrailApi } from "@/lib/trails/api";
+import { linkedPassageToNote } from "@/lib/links/types";
+import {
+  parseTrailApiResponse,
+  postTrailQuestion,
+  readApiError,
+  type TrailApi,
+} from "@/lib/trails/api";
 import {
   apiTrailIdOf,
   generatedTrailId,
@@ -509,6 +514,41 @@ export function DashboardWorkspace({
     setFocusedNodeIndex(0);
   };
 
+  /** Open a generated trail focused on one step, loading it if it isn't cached. */
+  const openTrailAt = async (apiTrailId: string, position: number) => {
+    const workspaceId = generatedTrailId(apiTrailId);
+    let trail = trails.find((item) => item.id === workspaceId) ?? null;
+
+    if (!trail) {
+      try {
+        const response = await fetch(`/api/trails/${apiTrailId}`);
+        const body = (await response.json().catch(() => null)) as unknown;
+        const api = response.ok ? parseTrailApiResponse(body) : null;
+
+        if (!api) {
+          notify(readApiError(body) ?? "Could not open that trail.");
+          return;
+        }
+
+        const mapped = trailToWorkspace(api);
+        setNotes((current) => mergeNotes(current, mapped.notes));
+        setTrails((current) => upsertTrail(current, mapped.trail));
+        trail = mapped.trail;
+      } catch {
+        notify("Could not reach the server to open that trail.");
+        return;
+      }
+    }
+
+    setOverlay(null);
+    setSelectedNoteId(null);
+    setNoteTrailId(null);
+    setCitationNote(null);
+    setTrailSequenceIds(orderedTrails.map((item) => item.id));
+    setSelectedTrailId(trail.id);
+    setFocusedNodeIndex(Math.max(0, Math.min(position - 1, trail.nodes.length - 1)));
+  };
+
   const togglePin = (note: Note) => {
     setNotes((current) =>
       current.map((item) =>
@@ -539,18 +579,62 @@ export function DashboardWorkspace({
     notify(`“${trail.title}” is now your active trail.`);
   };
 
-  const branchFromNote = (note: Note) => {
-    openComposer({
-      title: `Branch from ${note.title}`.slice(0, 200),
-      content: `${note.excerpt}\n\n`,
-    });
+  /** Branch a new trail from one step and open it, ready to continue. */
+  const startSideTrail = async (apiTrailId: string, position: number) => {
+    notify("Starting a side trail…", 15_000);
+
+    try {
+      const response = await fetch(`/api/trails/${apiTrailId}/side-trails`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ position }),
+      });
+      const body = (await response.json().catch(() => null)) as unknown;
+      const api = response.ok ? parseTrailApiResponse(body) : null;
+
+      if (!api) {
+        notify(readApiError(body) ?? "Could not start a side trail.");
+        return;
+      }
+
+      applyGeneratedTrail(api, true);
+      notify("Side trail started. Ask a follow-up to see where it leads.");
+    } catch {
+      notify("Could not reach the server to start a side trail.");
+    }
   };
 
-  const branchFromNode = (node: TrailNode) => {
-    openComposer({
-      title: `Branch from ${node.label}`.slice(0, 200),
-      content: `${node.label}\n\n`,
-    });
+  /** Side trail from the note drawer, when the note is a step on a trail. */
+  const noteTrailApiId = noteTrailId ? apiTrailIdOf({ id: noteTrailId }) : null;
+  const noteSideTrail =
+    noteTrailApiId && noteTrailIndex >= 0
+      ? () => void startSideTrail(noteTrailApiId, noteTrailIndex + 1)
+      : undefined;
+
+  /** Keep a step's annotation in the local copy after the server saved it. */
+  const handleAnnotationSaved = (
+    trailId: string,
+    index: number,
+    annotation: string | null,
+  ) => {
+    setTrails((current) =>
+      current.map((trail) =>
+        trail.id !== trailId
+          ? trail
+          : {
+              ...trail,
+              nodes: trail.nodes.map((node, nodeIndex) => {
+                if (nodeIndex !== index) {
+                  return node;
+                }
+
+                const rest = { ...node };
+                delete rest.annotation;
+                return annotation ? { ...rest, annotation } : rest;
+              }),
+            },
+      ),
+    );
   };
 
   const navigateTrail = useCallback(
@@ -755,52 +839,13 @@ export function DashboardWorkspace({
       source: created.sourceName,
     };
 
-    const node: TrailNode = {
-      id: `node-${created.documentId}`,
-      noteId: created.documentId,
-      label: created.title,
-      kind: note.kind,
-      relation: isDocument
-        ? created.extraction === "ocr"
-          ? "OCR capture"
-          : "Document source"
-        : "The beginning",
-    };
-
-    const targetTrail = created.trailId
-      ? (trails.find((trail) => trail.id === created.trailId) ?? null)
-      : null;
-
     setNotes((current) => [
       note,
       ...current.filter((item) => item.id !== note.id),
     ]);
 
-    if (targetTrail) {
-      setTrails((current) =>
-        current.map((trail) => {
-          if (trail.id !== targetTrail.id) {
-            return trail;
-          }
-
-          const alreadyLinked = trail.nodes.some(
-            (trailNode) => trailNode.noteId === note.id,
-          );
-
-          return {
-            ...trail,
-            saved: true,
-            updatedAt: "Just now",
-            nodes: alreadyLinked ? trail.nodes : [...trail.nodes, node],
-          };
-        }),
-      );
-      setActiveTrailId(targetTrail.id);
-      return;
-    }
-
-    // Without a chosen trail, a new source is only indexed. The Ready card
-    // invites a question instead of inventing a one-node trail.
+    // A new source is only indexed. The Ready card invites a question
+    // instead of inventing a one-step trail.
     setReadySource({
       documentId: created.documentId,
       title: created.title,
@@ -867,6 +912,12 @@ export function DashboardWorkspace({
     // Focus the first new step; the trail dialog scrolls it into view.
     setFocusedNodeIndex(Math.min(previousCount, trail.nodes.length - 1));
     notify(`Added ${added} step${added === 1 ? "" : "s"} to “${trail.title}”.`);
+  };
+
+  /** An insert, drop, or reorder was saved; show the trail as the server has it. */
+  const handleTrailEdited = (api: TrailApi, focusIndex: number) => {
+    const trail = applyGeneratedTrail(api, false);
+    setFocusedNodeIndex(Math.max(0, Math.min(focusIndex, trail.nodes.length - 1)));
   };
 
   const handleBuildTrail = async (question: string) => {
@@ -1412,12 +1463,6 @@ export function DashboardWorkspace({
         onClose={() => setOverlay(null)}
         initialTab={uploadTab}
         initialDraft={uploadDraft}
-        // Generated trails are question-driven; uploads never append to them.
-        targetTrailId={
-          activeTrailId && !apiTrailIdOf({ id: activeTrailId })
-            ? activeTrailId
-            : null
-        }
         onNoteCreated={handleNoteCreated}
         onNotify={notify}
       />
@@ -1454,7 +1499,12 @@ export function DashboardWorkspace({
         onResume={resumeTrail}
         onToggleSave={toggleTrailSave}
         onOpenNote={openNote}
-        onBranch={branchFromNode}
+        onStartSideTrail={(apiTrailId, position) =>
+          void startSideTrail(apiTrailId, position)
+        }
+        onTrailEdited={handleTrailEdited}
+        onAnnotationSaved={handleAnnotationSaved}
+        onOpenParent={(apiTrailId) => void openTrailAt(apiTrailId, 1)}
         onTrailContinued={handleTrailContinued}
         onNewQuestion={startNewQuestion}
         onUploadSource={() => openUpload("pdf")}
@@ -1476,13 +1526,15 @@ export function DashboardWorkspace({
         onPreviousNote={() => navigateNote(-1)}
         onNextNote={() => navigateNote(1)}
         onTogglePin={togglePin}
-        onBranch={branchFromNote}
+        onBranch={noteSideTrail}
         onOpenCitation={setCitationNote}
       />
 
       <CitationDrawer
         note={citationNote}
         onClose={() => setCitationNote(null)}
+        onOpenPassage={(passage) => setCitationNote(linkedPassageToNote(passage))}
+        onOpenTrailAt={(trailId, position) => void openTrailAt(trailId, position)}
       />
 
       <div

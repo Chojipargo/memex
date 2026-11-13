@@ -79,7 +79,9 @@ export function ShareTrail({
   }
 
   const publication = state.publication;
-  const outdated = publication !== null && publication.stepCount !== stepCount;
+  // Edits (reorders, re-worded reasons, annotations) don't change the public
+  // copy until it's refreshed, so offer that whenever the trail is shared.
+  const stepsChanged = publication !== null && publication.stepCount !== stepCount;
 
   const run = async (method: "POST" | "DELETE", success: string) => {
     setBusy(true);
@@ -154,16 +156,15 @@ export function ShareTrail({
         Public · {publication.learnerCount}
         <ArrowUpRightIcon className="size-3" />
       </Link>
-      {outdated ? (
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => void run("POST", "Public copy updated.")}
-          className={buttonClass}
-        >
-          Update public copy
-        </button>
-      ) : null}
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => void run("POST", "Public copy updated.")}
+        className={buttonClass}
+        title={stepsChanged ? "This trail has changed since you shared it." : undefined}
+      >
+        {stepsChanged ? "Update public copy •" : "Update public copy"}
+      </button>
       <button
         type="button"
         disabled={busy}

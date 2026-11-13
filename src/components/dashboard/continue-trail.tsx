@@ -14,11 +14,14 @@ import type { TrailApi } from "@/lib/trails/api";
 /** Follow-up box shown after the last step of a generated trail. */
 export function ContinueTrail({
   apiTrailId,
+  autoFocus = false,
   onContinued,
   onUploadSource,
   onStartNewTrail,
 }: {
   apiTrailId: string;
+  /** Focus the follow-up box on mount, e.g. for a just-started side trail. */
+  autoFocus?: boolean;
   onContinued: (trail: TrailApi) => void;
   onUploadSource: () => void;
   /** Build a separate trail from the typed question instead of appending. */
@@ -39,6 +42,12 @@ export function ContinueTrail({
       inputRef.current?.focus();
     }
   }, [error]);
+
+  useEffect(() => {
+    if (autoFocus) {
+      inputRef.current?.focus({ preventScroll: false });
+    }
+  }, [autoFocus]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

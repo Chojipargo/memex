@@ -154,6 +154,7 @@ export async function POST(request: Request) {
 
       return createGeneratedTrail({
         supabase,
+        userId: user.id,
         question,
         generated: result.generated,
         candidates: result.candidates,
@@ -190,7 +191,7 @@ export async function GET() {
   try {
     const result = await supabase
       .from("trails")
-      .select("id, title, question, created_at, trail_steps(id)")
+      .select("id, title, question, created_at, trail_steps!trail_steps_trail_id_fkey(id)")
       .eq("user_id", user.id)
       .order("created_at", { ascending: false })
       .limit(50);

@@ -50,6 +50,8 @@ export function trailToWorkspace(api: TrailApi): { notes: Note[]; trail: Trail }
     kind: "quote",
     relation: step.note,
     sourceOrigin: step.sourceOrigin,
+    ...(step.linkId ? { linkId: step.linkId } : {}),
+    ...(step.annotation ? { annotation: step.annotation } : {}),
   }));
 
   return {
@@ -62,6 +64,14 @@ export function trailToWorkspace(api: TrailApi): { notes: Note[]; trail: Trail }
       saved: true,
       nodes,
       origin: provenanceOf(api.steps.map((step) => step.sourceOrigin)),
+      ...(api.parentTrailId
+        ? {
+            parent: {
+              apiTrailId: api.parentTrailId,
+              title: api.parentTitle ?? "the parent trail",
+            },
+          }
+        : {}),
     },
   };
 }

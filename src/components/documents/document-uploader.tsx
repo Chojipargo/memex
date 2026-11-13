@@ -75,10 +75,8 @@ function friendlyMethod(method: ExtractionMethod) {
 }
 
 export function DocumentUploader({
-  targetTrailId,
   onDocumentCreated,
 }: {
-  targetTrailId?: string | null;
   onDocumentCreated: (document: DocumentCreated) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -257,10 +255,6 @@ export function DocumentUploader({
     formData.append("pageCount", String(draft.pageCount));
     formData.append("extractionMethod", draft.method);
 
-    if (targetTrailId) {
-      formData.append("trailId", targetTrailId);
-    }
-
     const xhr = new XMLHttpRequest();
     requestRef.current = xhr;
 
@@ -322,7 +316,6 @@ export function DocumentUploader({
           sourceName: draft.file.name,
           pageCount: draft.pageCount,
           extraction: document.extractionMethod ?? draft.method,
-          trailId: targetTrailId ?? null,
         });
         return;
       }
@@ -533,9 +526,7 @@ export function DocumentUploader({
                 {state.document.tokens.toLocaleString("en-US")} tokens
               </p>
               <p className="mt-1 text-[13.5px] leading-5 text-neutral-400">
-                {targetTrailId
-                  ? "Added to your active trail and searchable now."
-                  : "A new trail was opened and is searchable now."}
+                Searchable now. Ask a question about it to build a trail.
               </p>
               <button
                 type="button"

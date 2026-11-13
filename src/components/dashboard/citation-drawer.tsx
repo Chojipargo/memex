@@ -7,9 +7,12 @@ import {
   originProvenance,
   ProvenancePill,
 } from "@/components/dashboard/provenance-pill";
+import { BacklinksPanel } from "@/components/dashboard/backlinks-panel";
 import { HighlightedPassage } from "@/components/dashboard/trail-step-card";
 import { ArrowUpRightIcon, CloseIcon } from "@/components/ui/dashboard-icons";
 import type { Note } from "@/lib/dashboard/data";
+import type { LinkedPassage } from "@/lib/links/types";
+import { chunkIdOf } from "@/lib/trails/to-workspace";
 
 function retrieveLabel(value: string | undefined): string | null {
   if (!value) {
@@ -31,9 +34,15 @@ function retrieveLabel(value: string | undefined): string | null {
 export function CitationDrawer({
   note,
   onClose,
+  onOpenPassage,
+  onOpenTrailAt,
 }: {
   note: Note | null;
   onClose: () => void;
+  /** Follow a link to another passage. */
+  onOpenPassage?: (passage: LinkedPassage) => void;
+  /** Jump into a trail at the given 1-based position. */
+  onOpenTrailAt?: (trailId: string, position: number) => void;
 }) {
   const titleId = useId();
   const open = note !== null;
@@ -54,6 +63,7 @@ export function CitationDrawer({
   }, [open, onClose]);
 
   const provenance = originProvenance(note?.sourceOrigin);
+  const chunkId = note ? chunkIdOf(note) : null;
   const retrievedAt = retrieveLabel(note?.retrievedAt);
 
   return (
@@ -134,6 +144,15 @@ export function CitationDrawer({
                 </>
               ) : null}
             </dl>
+
+            {chunkId !== null && onOpenPassage && onOpenTrailAt ? (
+              <BacklinksPanel
+                key={chunkId}
+                chunkId={chunkId}
+                onOpenPassage={onOpenPassage}
+                onOpenTrailAt={onOpenTrailAt}
+              />
+            ) : null}
           </div>
 
           {note.sourceUrl ? (
