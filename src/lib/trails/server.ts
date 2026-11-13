@@ -12,6 +12,7 @@ import {
 import { fromCodePointIndex, toCodePointIndex } from "@/lib/trails/quote";
 import {
   TRAIL_EMBEDDING_MAX_ATTEMPTS,
+  TRAIL_EMBEDDING_MAX_RETRY_WAIT_MS,
   TRAIL_EMBEDDING_TIMEOUT_MS,
 } from "@/lib/trails/timeouts";
 
@@ -220,6 +221,7 @@ export async function embedQueries(queries: string[]): Promise<number[][]> {
   const embeddings = await embedTexts(queries, "RETRIEVAL_QUERY", {
     timeoutMs: TRAIL_EMBEDDING_TIMEOUT_MS,
     maxAttempts: TRAIL_EMBEDDING_MAX_ATTEMPTS,
+    maxRetryWaitMs: TRAIL_EMBEDDING_MAX_RETRY_WAIT_MS,
   });
 
   if (embeddings.length !== queries.length || embeddings.some((vector) => !vector)) {

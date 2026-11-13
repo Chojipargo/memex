@@ -30,6 +30,13 @@ export const TRAIL_EMBEDDING_TIMEOUT_MS = 6_000;
 export const TRAIL_EMBEDDING_MAX_ATTEMPTS = 2;
 
 /**
+ * When Gemini rate-limits a question's embedding, wait at most this long
+ * before the retry. A longer requested delay fails at once with a message
+ * saying how long to wait, rather than spending the route's budget waiting.
+ */
+export const TRAIL_EMBEDDING_MAX_RETRY_WAIT_MS = 8_000;
+
+/**
  * Browser-side guard for POST requests. It is slightly longer than maxDuration
  * so the server's JSON error normally reaches the client before this aborts.
  */
