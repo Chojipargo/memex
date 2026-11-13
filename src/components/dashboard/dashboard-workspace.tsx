@@ -60,10 +60,12 @@ import {
   type TrailNode,
 } from "@/lib/dashboard/data";
 import {
+  LEGACY_WORKSPACE_STORAGE_KEY,
   readStoredWorkspace,
-  WORKSPACE_STORAGE_KEY,
+  workspaceStorageKey,
 } from "@/lib/dashboard/storage";
 import { LOCAL_NOTE_BODY_MAX_CHARS } from "@/lib/ingestion/constants";
+import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { postTrailQuestion, type TrailApi } from "@/lib/trails/api";
 import {
   apiTrailIdOf,
@@ -180,6 +182,8 @@ export function DashboardWorkspace({
   const heroRef = useRef<HeroHandle>(null);
   const reduceMotion = useReducedMotion();
   const [hydrated, setHydrated] = useState(false);
+  // Null until the signed-in user is known; nothing is read or written without it.
+  const [storageKey, setStorageKey] = useState<string | null>(null);
   const [overlay, setOverlay] = useState<Overlay>(null);
   const [uploadTab, setUploadTab] = useState<UploadTab>("pdf");
   const [uploadDraft, setUploadDraft] = useState<{
@@ -222,11 +226,33 @@ export function DashboardWorkspace({
   }, []);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
+    let cancelled = false;
+
+    const hydrate = async () => {
       try {
-        const stored = readStoredWorkspace(
-          window.localStorage.getItem(WORKSPACE_STORAGE_KEY),
-        );
+        window.localStorage.removeItem(LEGACY_WORKSPACE_STORAGE_KEY);
+      } catch {
+        // Storage may be unavailable in private or restricted contexts.
+      }
+
+      let key: string | null = null;
+
+      try {
+        const result = await createBrowserSupabaseClient()?.auth.getUser();
+        const userId = result?.data.user?.id;
+        key = userId ? workspaceStorageKey(userId) : null;
+      } catch {
+        // Without a known user, start empty and keep nothing locally.
+      }
+
+      if (cancelled) {
+        return;
+      }
+
+      try {
+        const stored = key
+          ? readStoredWorkspace(window.localStorage.getItem(key))
+          : null;
 
         if (stored) {
           setNotes(stored.notes);
@@ -236,27 +262,32 @@ export function DashboardWorkspace({
       } catch {
         // A malformed local cache should never block the workspace.
       } finally {
+        setStorageKey(key);
         setHydrated(true);
       }
-    }, 0);
+    };
 
-    return () => window.clearTimeout(timer);
+    void hydrate();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
-    if (!hydrated) {
+    if (!hydrated || !storageKey) {
       return;
     }
 
     try {
       window.localStorage.setItem(
-        WORKSPACE_STORAGE_KEY,
+        storageKey,
         JSON.stringify({ notes, trails, activeTrailId }),
       );
     } catch {
       // Storage may be unavailable in private or restricted contexts.
     }
-  }, [activeTrailId, hydrated, notes, trails]);
+  }, [activeTrailId, hydrated, notes, storageKey, trails]);
 
   const selectedTrail = selectedTrailId
     ? (trails.find((trail) => trail.id === selectedTrailId) ?? null)
