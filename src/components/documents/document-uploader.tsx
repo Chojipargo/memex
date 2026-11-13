@@ -142,7 +142,11 @@ export function DocumentUploader({
     }
 
     if (!isSupportedDocument(file)) {
-      fail("Choose a PDF, PNG, JPEG, WebP, or BMP file.");
+      fail(
+        /\.(pptx?|pptm|ppsx|potx|pps|pot)$/i.test(file.name)
+          ? "For PowerPoint decks, use the Note or text tab and choose Import file."
+          : "Choose a PDF, PNG, JPEG, WebP, or BMP file.",
+      );
       return;
     }
 
