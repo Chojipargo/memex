@@ -1,8 +1,10 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useId, useMemo, useState } from "react";
 
-import type { MapEdge, MapNode, NoteKind, TrailNode } from "@/lib/dashboard/data";
+import type { TrailNode } from "@/lib/dashboard/data";
+import { layoutGraph } from "@/lib/graph/layout";
+import type { AssociationGraph, GraphEdge, GraphNode } from "@/lib/graph/types";
 
 function pointList(count: number) {
   const width = 180;
@@ -91,168 +93,182 @@ export function TrailMiniGraph({
   );
 }
 
-function kindShape(kind: NoteKind, x: number, y: number) {
-  if (kind === "source") {
-    return <rect x={x - 4.5} y={y - 4.5} width={9} height={9} rx={2} />;
-  }
+const MAP_WIDTH = 760;
+const MAP_HEIGHT = 310;
 
-  if (kind === "question") {
-    return (
-      <circle
-        cx={x}
-        cy={y}
-        r={4.5}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={1.3}
-        strokeDasharray="1.5 2"
-      />
-    );
-  }
-
-  if (kind === "quote") {
-    return <circle cx={x} cy={y} r={4} fill="currentColor" />;
-  }
-
-  return (
-    <circle
-      cx={x}
-      cy={y}
-      r={4}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.3}
-    />
-  );
+function shortLabel(title: string, page: number): string {
+  const clean = title.replace(/(?:\s*\(\d+\))+$/, "").trim() || title;
+  const short = clean.length > 22 ? `${clean.slice(0, 21).trimEnd()}…` : clean;
+  return `${short} · p.${page}`;
 }
 
+/** Dash pattern by where the association comes from. */
+function edgeDash(origin: GraphEdge["origin"]): string | undefined {
+  if (origin === "user") {
+    return undefined;
+  }
+
+  return origin === "claude_accepted" ? "5 3" : "1.5 3.5";
+}
+
+function edgeTitle(edge: GraphEdge): string {
+  const parts = [
+    edge.reason ?? "Appear together on your trails",
+    edge.origin === "user" ? "Your link" : edge.origin === "claude_accepted" ? "Claude's link" : "Trail co-occurrence only",
+  ];
+
+  if (edge.traversalCount > 0) {
+    parts.push(`followed ${edge.traversalCount}×`);
+  }
+
+  return parts.join(" · ");
+}
+
+/**
+ * The reader's association map: passages placed by a force layout, edges
+ * drawn thicker and brighter the more they have been walked, and styled by
+ * origin (solid: your link, dashed: Claude's link, dotted: only appear
+ * together on trails).
+ */
 export function AssociativeMap({
-  nodes,
-  edges,
-  onOpenNote,
+  graph,
+  onOpenPassage,
 }: {
-  nodes: MapNode[];
-  edges: MapEdge[];
-  onOpenNote: (noteId: string) => void;
+  graph: AssociationGraph;
+  onOpenPassage: (node: GraphNode) => void;
 }) {
-  const [hovered, setHovered] = useState<string | null>(null);
+  const [hovered, setHovered] = useState<number | null>(null);
   const patternId = `map-dots-${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
-  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const positions = useMemo(
+    () =>
+      layoutGraph(
+        graph.nodes.map((node) => node.chunkId),
+        graph.edges,
+        { width: MAP_WIDTH, height: MAP_HEIGHT, padding: 46 },
+      ),
+    [graph],
+  );
+  const maxWeight = Math.max(1e-9, ...graph.edges.map((edge) => edge.weight));
+  const maxScore = Math.max(1e-9, ...graph.nodes.map((node) => node.score));
 
   return (
     <svg
-      viewBox="0 0 760 310"
+      viewBox={`0 0 ${MAP_WIDTH} ${MAP_HEIGHT}`}
       fill="none"
       role="img"
-      aria-label="Associative map of notes and the links between them"
+      aria-label="Association map of your passages, weighted by the links you follow and the trails you walk"
       className="h-auto w-full overflow-visible"
     >
       <defs>
-        <pattern
-          id={patternId}
-          x="0"
-          y="0"
-          width="28"
-          height="28"
-          patternUnits="userSpaceOnUse"
-        >
+        <pattern id={patternId} x="0" y="0" width="28" height="28" patternUnits="userSpaceOnUse">
           <circle cx="1" cy="1" r="0.7" fill="currentColor" opacity="0.16" />
         </pattern>
       </defs>
 
-      <rect
-        width="760"
-        height="310"
-        fill={`url(#${patternId})`}
-        className="text-neutral-400"
-      />
+      <rect width={MAP_WIDTH} height={MAP_HEIGHT} fill={`url(#${patternId})`} className="text-neutral-400" />
 
-      {edges.map((edge) => {
-        const from = byId.get(edge.from);
-        const to = byId.get(edge.to);
+      {graph.edges.map((edge) => {
+        const from = positions.get(edge.source);
+        const to = positions.get(edge.target);
 
         if (!from || !to) {
           return null;
         }
 
-        const isActive = hovered === from.id || hovered === to.id;
+        const strength = edge.weight / maxWeight;
+        const isActive = hovered === edge.source || hovered === edge.target;
         const midX = (from.x + to.x) / 2;
-        const midY = (from.y + to.y) / 2 - 18;
+        const midY = (from.y + to.y) / 2 - 14;
 
         return (
           <path
-            key={edge.id}
+            key={`${edge.source}-${edge.target}`}
             d={`M ${from.x} ${from.y} Q ${midX} ${midY} ${to.x} ${to.y}`}
             stroke="currentColor"
-            strokeWidth={isActive ? 1.35 : 0.8}
+            strokeWidth={0.6 + strength * 2.6 + (isActive ? 0.5 : 0)}
+            strokeDasharray={edgeDash(edge.origin)}
             strokeLinecap="round"
-            opacity={isActive ? 0.7 : 0.2 + edge.strength / 300}
-            className={isActive ? "transition-all duration-300" : "transition-all duration-300"}
-          />
+            opacity={isActive ? 0.85 : 0.14 + strength * 0.6}
+            className="text-neutral-200 transition-all duration-300"
+          >
+            <title>{edgeTitle(edge)}</title>
+          </path>
         );
       })}
 
-      {nodes.map((node) => {
-        const isHovered = hovered === node.id;
+      {graph.nodes.map((node) => {
+        const point = positions.get(node.chunkId);
+
+        if (!point) {
+          return null;
+        }
+
+        const isHovered = hovered === node.chunkId;
         const isConnected =
           hovered !== null &&
-          edges.some(
+          graph.edges.some(
             (edge) =>
-              (edge.from === hovered && edge.to === node.id) ||
-              (edge.to === hovered && edge.from === node.id),
+              (edge.source === hovered && edge.target === node.chunkId) ||
+              (edge.target === hovered && edge.source === node.chunkId),
           );
         const dimmed = hovered !== null && !isHovered && !isConnected;
+        const radius = 6.5 + (node.score / maxScore) * 5.5;
+        const label = shortLabel(node.documentTitle, node.page);
 
         return (
           <g
-            key={node.id}
+            key={node.chunkId}
             role="button"
             tabIndex={0}
-            aria-label={`Open note: ${node.label}`}
-            onClick={() => onOpenNote(node.noteId)}
+            aria-label={`Open passage: ${node.documentTitle}, page ${node.page}`}
+            onClick={() => onOpenPassage(node)}
             onKeyDown={(event) => {
               if (event.key === "Enter" || event.key === " ") {
                 event.preventDefault();
-                onOpenNote(node.noteId);
+                onOpenPassage(node);
               }
             }}
-            onMouseEnter={() => setHovered(node.id)}
+            onMouseEnter={() => setHovered(node.chunkId)}
             onMouseLeave={() => setHovered(null)}
-            onFocus={() => setHovered(node.id)}
+            onFocus={() => setHovered(node.chunkId)}
             onBlur={() => setHovered(null)}
             className="cursor-pointer text-neutral-200 outline-none transition-opacity duration-300"
-            opacity={dimmed ? 0.35 : 1}
+            opacity={dimmed ? 0.3 : 1}
           >
-            <title>{node.label}</title>
+            <title>
+              {`${node.documentTitle}, p.${node.page} · on ${node.trailCount} trail${node.trailCount === 1 ? "" : "s"}`}
+            </title>
             {isHovered ? (
-              <circle
-                cx={node.x}
-                cy={node.y}
-                r={18}
-                fill="currentColor"
-                opacity={0.06}
-              />
+              <circle cx={point.x} cy={point.y} r={radius + 8} fill="currentColor" opacity={0.07} />
             ) : null}
             <circle
-              cx={node.x}
-              cy={node.y}
-              r={9.5}
+              cx={point.x}
+              cy={point.y}
+              r={radius}
               fill="#0a0a0a"
               stroke="currentColor"
-              strokeWidth={isHovered ? 1.4 : 0.85}
-              opacity={isHovered ? 1 : 0.7}
+              strokeWidth={isHovered ? 1.5 : 0.9}
+              opacity={isHovered ? 1 : 0.8}
             />
-            <g className="text-neutral-300">{kindShape(node.kind, node.x, node.y)}</g>
+            <circle
+              cx={point.x}
+              cy={point.y}
+              r={node.sourceOrigin === "web" ? 2.4 : 3}
+              fill={node.sourceOrigin === "web" ? "none" : "currentColor"}
+              stroke="currentColor"
+              strokeWidth={1.1}
+              opacity={0.85}
+            />
             <text
-              x={node.x}
-              y={node.y + 25}
+              x={point.x}
+              y={point.y + radius + 13}
               textAnchor="middle"
               fill="currentColor"
-              fontSize={10.5}
+              fontSize={10}
               letterSpacing="0.01em"
-              opacity={isHovered ? 1 : 0.72}
+              opacity={isHovered ? 1 : 0.7}
             >
-              {node.label}
+              {label}
             </text>
           </g>
         );

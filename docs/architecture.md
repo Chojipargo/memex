@@ -135,6 +135,7 @@ Migrations in `supabase/migrations/`, applied in order:
 | `20261114090000_associative_links.sql` | `links` table; `link_id` and `annotation` on `trail_steps`; converts existing trails into links; `link_trail_steps`, `create_user_link`, `record_link_traversal`, `get_passage_backlinks` |
 | `20261114120000_trail_editing.sql` | `parent_trail_id`, `branch_from_step_id`, `updated_at` on `trails`; `rewrite_trail` and `start_side_trail`; drops the retired `trail_nodes` table and its functions |
 | `20261115090000_step_aware_retrieval.sql` | `match_documents_near_chunk`: nearest passages to a stored passage embedding |
+| `20261116090000_association_graph.sql` | `get_association_graph`: usage-weighted map of links and trail co-occurrence, with fading |
 
 Every private table has owner-scoped RLS (`user_id = auth.uid()`, or through the owning document for `chunks`). The RPC functions are `security invoker` and check ownership of the trail and every cited chunk themselves. The exception is published trails (below).
 
@@ -165,6 +166,16 @@ Edits are previewed first (`POST /api/trails/[id]/rewrite/preview` with the new 
 - `POST /api/trails/[id]/side-trails` with `{ position }` starts a new trail at that step (`start_side_trail`), recording `parent_trail_id` and `branch_from_step_id`. The dashboard opens it with the follow-up box focused.
 
 Hand-built, document-level trails (`trail_nodes`) and the demo notes and trails are gone. The local cache keeps only generated trails.
+
+## Association map
+
+The dashboard map (`GET /api/graph`, `get_association_graph`) is built from what the reader does, not from embedding similarity. The strength of an edge between two passages is the sum of:
+
+- **Links:** `1 + traversal_count` for each link between them. A link is counted as followed when the reader opens it from the passage drawer or the "Active associations" panel, or steps along it in a trail (one step forward follows the link into the new step, one step back the link out of the step just left). Repeats of the same link within a minute count once (`src/lib/links/traversal.ts`).
+- **Trail co-occurrence:** 1 for neighbouring steps on a trail, 0.5 two steps apart, 0.25 three apart, summed over trails.
+- **Fading:** each part halves every `ASSOCIATION_HALF_LIFE_DAYS` (default 30) since the link was last followed or edited, and since the trail last changed, so walked paths stay strong and unused ones fade.
+
+The busiest passages (total strength plus one per trail they appear on, 30 by default) become nodes, placed by a deterministic force-directed layout (`src/lib/graph/layout.ts`). Edges are drawn thicker and brighter by strength, and styled by origin: solid for the reader's links, dashed for Claude's accepted links, dotted where passages only appear together on trails. The strongest edges also feed the "Active associations" panel and the note drawer's associations. The demo map data is gone.
 
 ## Public trails (Explore)
 

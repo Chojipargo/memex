@@ -31,6 +31,10 @@ import { ResearchDialog } from "@/components/dashboard/research-dialog";
 import { SupportDialog } from "@/components/dashboard/support-dialog";
 import { TrailsDrawer } from "@/components/dashboard/trails-drawer";
 import {
+  graphAssociations,
+  useAssociationGraph,
+} from "@/components/dashboard/use-association-graph";
+import {
   AssociativeMap,
   TrailMiniGraph,
 } from "@/components/dashboard/trail-graph";
@@ -46,16 +50,12 @@ import {
   LinkIcon,
   LogOutIcon,
   PinIcon,
-  PlusIcon,
   SearchIcon,
   SparkIcon,
   TrailsIcon,
 } from "@/components/ui/dashboard-icons";
 import { UploadIcon } from "@/components/ui/icons";
 import {
-  mapEdges,
-  mapNodes,
-  type Association,
   type Note,
   type Trail,
 } from "@/lib/dashboard/data";
@@ -72,6 +72,7 @@ import {
 } from "@/lib/ingestion/constants";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { linkedPassageToNote } from "@/lib/links/types";
+import { recordLinkTraversal } from "@/lib/links/traversal";
 import {
   parseTrailApiResponse,
   postTrailQuestion,
@@ -96,7 +97,6 @@ type Overlay =
 type UploadTab = "pdf" | "note";
 
 /** Associations are not generated yet; the demo set is no longer rendered. */
-const NO_ASSOCIATIONS: Association[] = [];
 
 function TrailCard({
   trail,
@@ -387,6 +387,38 @@ export function DashboardWorkspace({
       .filter((trail): trail is Trail => Boolean(trail));
   }, [orderedTrails, selectedTrail, trailSequenceIds, trails]);
 
+  const lastFocusRef = useRef<{ trailId: string; index: number } | null>(null);
+
+  const safeFocusedNodeIndexForWalk =
+    selectedTrailId && focusedNodeIndex >= 0 ? focusedNodeIndex : -1;
+
+  useEffect(() => {
+    const trail = selectedTrailId
+      ? trails.find((item) => item.id === selectedTrailId)
+      : undefined;
+    const previous = lastFocusRef.current;
+
+    if (!trail || safeFocusedNodeIndexForWalk < 0) {
+      lastFocusRef.current = null;
+      return;
+    }
+
+    const index = Math.min(safeFocusedNodeIndexForWalk, trail.nodes.length - 1);
+    lastFocusRef.current = { trailId: trail.id, index };
+
+    if (!previous || previous.trailId !== trail.id) {
+      return;
+    }
+
+    // One step forward follows the link into the new step; one step back
+    // follows the link out of the step just left.
+    if (index === previous.index + 1) {
+      recordLinkTraversal(trail.nodes[index]?.linkId);
+    } else if (index === previous.index - 1) {
+      recordLinkTraversal(trail.nodes[previous.index]?.linkId);
+    }
+  }, [safeFocusedNodeIndexForWalk, selectedTrailId, trails]);
+
   const safeFocusedNodeIndex =
     selectedTrail && selectedTrail.nodes.length > 0
       ? Math.min(focusedNodeIndex, selectedTrail.nodes.length - 1)
@@ -495,14 +527,6 @@ export function DashboardWorkspace({
     },
     [activeTrailId, trails],
   );
-
-  const openNoteById = (noteId: string) => {
-    const note = notes.find((item) => item.id === noteId);
-
-    if (note) {
-      openNote(note);
-    }
-  };
 
   const openTrail = (trail: Trail) => {
     setOverlay(null);
@@ -952,25 +976,27 @@ export function DashboardWorkspace({
   );
 
   const recentTrails = orderedTrails.slice(0, 4);
-  const noteMap = useMemo(() => new Map(notes.map((note) => [note.id, note])), [
-    notes,
-  ]);
-  const visibleAssociations = NO_ASSOCIATIONS.map((association) => ({
-    association,
-    from: noteMap.get(association.fromId),
-    to: noteMap.get(association.toId),
-  }))
-    .filter(
-      (entry): entry is { association: Association; from: Note; to: Note } =>
-        Boolean(entry.from && entry.to),
-    )
-    .slice(0, 4);
-  // The map layout is hand-placed demo data; only draw nodes whose notes exist.
-  const visibleMapNodes = mapNodes.filter((node) => noteMap.has(node.noteId));
-  const visibleMapNodeIds = new Set(visibleMapNodes.map((node) => node.id));
-  const visibleMapEdges = mapEdges.filter(
-    (edge) => visibleMapNodeIds.has(edge.from) && visibleMapNodeIds.has(edge.to),
+  // Reload the map when trails change, and whenever a trail is opened or
+  // closed so the links walked while reading show up.
+  const graphRefreshKey = `${trails
+    .map((trail) => `${trail.id}:${trail.nodes.map((node) => node.noteId).join(",")}`)
+    .join("|")}#${selectedTrailId ?? ""}`;
+  const associationGraph = useAssociationGraph(graphRefreshKey, Boolean(storageKey));
+  const associations = useMemo(
+    () => graphAssociations(associationGraph),
+    [associationGraph],
   );
+  const graphNodes = new Map(
+    (associationGraph?.nodes ?? []).map((node) => [node.chunkId, node]),
+  );
+  const topAssociations = (associationGraph?.edges ?? [])
+    .slice(0, 4)
+    .flatMap((edge, index) => {
+      const from = graphNodes.get(edge.source);
+      const to = graphNodes.get(edge.target);
+      const association = associations[index];
+      return from && to && association ? [{ edge, from, to, association }] : [];
+    });
   const isEmptyWorkspace = notes.length === 0 && trails.length === 0;
 
   const navActions = [
@@ -1143,7 +1169,7 @@ export function DashboardWorkspace({
           {[
             { label: "notes", count: notes.length },
             { label: "trails", count: trails.length },
-            { label: "associations", count: visibleAssociations.length },
+            { label: "associations", count: associationGraph?.edges.length ?? 0 },
           ]
             .filter((stat) => stat.count > 0)
             .map((stat) => (
@@ -1215,7 +1241,7 @@ export function DashboardWorkspace({
             </section>
             )}
 
-            {visibleMapNodes.length > 1 ? (
+            {associationGraph && associationGraph.nodes.length > 1 ? (
             <motion.section
               initial={{ opacity: 0, y: 18 }}
               animate={{ opacity: 1, y: 0 }}
@@ -1231,17 +1257,17 @@ export function DashboardWorkspace({
                     How your thoughts connect
                   </h2>
                 </div>
-                <p className="text-[13px] text-neutral-500">
-                  Hover a note to trace its edges. Click to open.
+                <p className="max-w-xs text-right text-[13px] text-neutral-500">
+                  Drawn from the links you follow and the trails you walk.
+                  Unused paths fade over {Math.round(associationGraph.halfLifeDays)} days.
                 </p>
               </div>
 
               <div className="mt-3 -mx-2 overflow-x-auto pb-1 [scrollbar-width:thin] sm:-mx-4 lg:overflow-visible">
                 <div className="min-w-[46rem] lg:min-w-0">
                   <AssociativeMap
-                    nodes={visibleMapNodes}
-                    edges={visibleMapEdges}
-                    onOpenNote={openNoteById}
+                    graph={associationGraph}
+                    onOpenPassage={(node) => setCitationNote(linkedPassageToNote(node))}
                   />
                 </div>
               </div>
@@ -1251,20 +1277,20 @@ export function DashboardWorkspace({
 
               <div className="mt-2 flex flex-wrap items-center gap-4 border-t border-white/[0.06] pt-3 font-mono text-[11px] uppercase tracking-[0.16em] text-neutral-500">
                 <span className="flex items-center gap-2">
-                  <span className="h-px w-5 bg-neutral-400/50" />
-                  strong association
+                  <span className="h-px w-5 border-t border-neutral-300/70" />
+                  your link
                 </span>
                 <span className="flex items-center gap-2">
-                  <span className="h-px w-5 border-t border-dashed border-neutral-600/60" />
-                  tentative link
+                  <span className="h-px w-5 border-t border-dashed border-neutral-400/70" />
+                  claude&apos;s link
                 </span>
                 <span className="flex items-center gap-2">
-                  <span className="size-1.5 rounded-full border border-neutral-500" />
-                  note
+                  <span className="h-px w-5 border-t border-dotted border-neutral-500/70" />
+                  on trails together
                 </span>
                 <span className="flex items-center gap-2">
-                  <span className="size-1.5 rounded-sm border border-neutral-500" />
-                  source
+                  <span className="h-[3px] w-5 rounded-full bg-neutral-400/60" />
+                  thicker = walked more
                 </span>
               </div>
             </motion.section>
@@ -1326,7 +1352,7 @@ export function DashboardWorkspace({
               </div>
             </motion.section>
 
-            {visibleAssociations.length > 0 ? (
+            {topAssociations.length > 0 ? (
             <motion.section
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
@@ -1348,17 +1374,20 @@ export function DashboardWorkspace({
               </div>
 
               <div className="mt-4 space-y-2">
-                {visibleAssociations.map(({ association, from, to }) => (
+                {topAssociations.map(({ edge, from, to, association }) => (
                   <button
                     key={association.id}
                     type="button"
-                    onClick={() => openNote(from)}
+                    onClick={() => {
+                      recordLinkTraversal(edge.linkId);
+                      setCitationNote(linkedPassageToNote(from));
+                    }}
                     className="group w-full rounded-xl border border-white/[0.055] bg-white/[0.018] p-3 text-left transition hover:border-white/[0.13] hover:bg-white/[0.038]"
                   >
                     <div className="flex items-center gap-2 text-[13px] text-neutral-400">
-                      <span className="truncate">{from.title}</span>
+                      <span className="truncate">{from.documentTitle}</span>
                       <LinkIcon className="size-3 shrink-0 text-neutral-500" />
-                      <span className="truncate">{to.title}</span>
+                      <span className="truncate">{to.documentTitle}</span>
                     </div>
                     <p className="mt-1.5 line-clamp-2 text-[12px] leading-4 text-neutral-500">
                       {association.hint}
@@ -1378,14 +1407,9 @@ export function DashboardWorkspace({
                 ))}
               </div>
 
-              <button
-                type="button"
-                onClick={() => openComposer()}
-                className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-white/[0.09] px-3 py-2.5 text-[13px] text-neutral-400 transition hover:border-white/[0.17] hover:bg-white/[0.025] hover:text-neutral-200"
-              >
-                <PlusIcon className="size-3.5" />
-                Weave a new connection
-              </button>
+              <p className="mt-4 text-[12.5px] leading-5 text-neutral-500">
+                Your strongest connections. Open any passage to link it to another.
+              </p>
             </motion.section>
             ) : null}
 
@@ -1514,7 +1538,7 @@ export function DashboardWorkspace({
       <NoteDetailDrawer
         note={selectedNote}
         notes={notes}
-        associations={NO_ASSOCIATIONS}
+        associations={associations}
         trail={noteTrail}
         position={noteTrailPosition}
         direction={noteTransitionDirection}
