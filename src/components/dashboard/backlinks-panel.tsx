@@ -18,6 +18,7 @@ import {
   type PassageSearchResult,
   parsePassageBacklinks,
 } from "@/lib/links/types";
+import { recordLinkTraversal } from "@/lib/links/traversal";
 import { readApiError } from "@/lib/trails/api";
 
 type LoadState =
@@ -93,7 +94,7 @@ export function BacklinksPanel({
 
   const follow = (linkId: string, passage: LinkedPassage) => {
     // Strengthen the link; opening the passage doesn't wait on it.
-    void fetch(`/api/links/${linkId}/traverse`, { method: "POST" }).catch(() => undefined);
+    recordLinkTraversal(linkId);
     onOpenPassage(passage);
   };
 

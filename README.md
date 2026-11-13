@@ -22,6 +22,7 @@ flowchart LR
 - **Trails, not chat.** Each answer is 3–8 ordered steps. Every step cites a real passage, shows a key quote that has been checked against the source text, gives a one-to-two sentence AI summary, and can expand to the full surrounding passage.
 - **Library first, web when needed.** Questions are answered from your library when it has strong matches. Otherwise memex searches the web (Tavily), stores the pages as sources, and labels every step `In Your Library`, `Web Synthesized`, or `Hybrid`.
 - **Links, not just lists.** Every connection between two passages is a saved link with a reason, shared by every trail that walks it. Open any passage to see what it's tied to and which trails pass through it, follow a link, or link it to another passage yourself.
+- **A map that remembers how you think.** The association map is drawn from the links you follow and the trails you walk. Paths you use often grow thicker; ones you leave alone fade over time.
 - **Learn from others.** Share a trail on **Explore** (`/explore`) and browse the most-followed public trails. Each public step shows its note, summary, key quote, and source title, never your full private passages. "Ask in my library" rebuilds the same question from your own sources.
 - **Edit the path.** Insert a passage anywhere, drop or reorder steps, and add your own notes. Claude suggests why each new connection holds, and you can reword it before saving. Start a side trail from any step to follow a tangent without losing the original.
 - **Keep going.** Ask a follow-up to extend a trail, branch a new trail from any step, or revisit earlier trails from the trails drawer and command palette (`Ctrl/⌘ K`).
@@ -69,6 +70,7 @@ All keys except the two `NEXT_PUBLIC_` values are **server-only**. Never expose 
 | `ANTHROPIC_API_KEY` | Yes | Writing trails and continuations |
 | `TAVILY_API_KEY` | For web research | Automatic web fallback and "Research the web". Library-only trails and pasted-URL extraction work without it |
 | `TRAIL_COVERAGE_THRESHOLD` | No (`0.6`) | How strong a library match must be before skipping the web. Raise it to research more often |
+| `ASSOCIATION_HALF_LIFE_DAYS` | No (`30`) | How quickly unused links and trails fade on the association map: their weight halves every this many days |
 | `TRAIL_STEP_WEIGHT` | No (`0.5`) | When continuing a trail, how much the next step is chosen for being near the current passage (`1`) versus matching the question (`0`) |
 | `CLAUDE_TRAIL_MODEL` | No (`claude-sonnet-5-5`) | Model that writes trails |
 | `CLAUDE_TRAIL_FALLBACK_MODEL` | No (`claude-haiku-5-5`) | Used when the main model is overloaded; `none` disables it |
@@ -125,6 +127,7 @@ All routes require a signed-in session and return JSON errors (`401` when signed
 | `POST /api/trails/:id/proposals/accept` | Continue with one. Body: `{ fromChunkId, chunkId, reason, reasonEdited, gist?, quote? }` |
 | `PATCH /api/trails/:id/steps/:position` | Set or clear your annotation on a step |
 | `POST /api/trails/:id/side-trails` | Start a side trail at a step. Body: `{ position }` |
+| `GET /api/graph` | Your usage-weighted association map. `?limit=` caps the passages (2–100, default 30) |
 | `GET /api/chunks/:id/backlinks` | Links tied to a passage and the trails that pass through it |
 | `POST /api/links` | Link two of your passages by hand. Body: `{ sourceChunkId, targetChunkId, reason }` |
 | `POST /api/links/:id/traverse` | Record that a link was followed |
