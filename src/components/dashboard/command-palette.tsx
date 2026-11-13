@@ -12,6 +12,7 @@ import {
 import {
   ArrowUpRightIcon,
   BookIcon,
+  GlobeIcon,
   HelpIcon,
   PlusIcon,
   SearchIcon,
@@ -23,7 +24,7 @@ import type { Note, Trail } from "@/lib/dashboard/data";
 
 type CommandItem = {
   id: string;
-  kind: "trail" | "note" | "action";
+  kind: "ask" | "trail" | "note" | "action";
   title: string;
   subtitle: string;
   icon: ReactNode;
@@ -43,6 +44,7 @@ export function CommandPalette({
   onOpenTrails,
   onSupport,
   onBuildTrail,
+  onResearch,
 }: {
   open: boolean;
   onClose: () => void;
@@ -55,6 +57,7 @@ export function CommandPalette({
   onOpenTrails: () => void;
   onSupport: () => void;
   onBuildTrail: (question: string) => void;
+  onResearch: () => void;
 }) {
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
@@ -116,6 +119,15 @@ export function CommandPalette({
         perform: onUpload,
       },
       {
+        id: "action-research",
+        kind: "action",
+        title: "Research a topic on the web",
+        subtitle: "Generate a trail from a topic, question, or URL",
+        icon: <GlobeIcon className="size-4" />,
+        keywords: "research web topic url search generate external sources",
+        perform: onResearch,
+      },
+      {
         id: "action-trails",
         kind: "action",
         title: "Browse previous trails",
@@ -141,7 +153,7 @@ export function CommandPalette({
         ? [
             {
               id: "action-build-trail",
-              kind: "action",
+              kind: "ask",
               title: `Build a trail: “${trimmedQuery}”`,
               subtitle: "Follow your sources into an ordered path",
               icon: <SparkIcon className="size-4" />,
@@ -159,6 +171,7 @@ export function CommandPalette({
     onOpenNote,
     onOpenTrail,
     onOpenTrails,
+    onResearch,
     onSupport,
     onUpload,
     query,
@@ -181,12 +194,19 @@ export function CommandPalette({
     () =>
       (
         [
+          ["Ask", filtered.filter((item) => item.kind === "ask")],
           ["Trails", filtered.filter((item) => item.kind === "trail")],
           ["Notes", filtered.filter((item) => item.kind === "note")],
           ["Actions", filtered.filter((item) => item.kind === "action")],
         ] as const
       ).filter(([, sectionItems]) => sectionItems.length > 0),
     [filtered],
+  );
+
+  // Keyboard order must match what is drawn: section by section.
+  const ordered = useMemo(
+    () => sections.flatMap(([, sectionItems]) => sectionItems),
+    [sections],
   );
 
   useEffect(() => {
@@ -206,7 +226,7 @@ export function CommandPalette({
     if (event.key === "ArrowDown") {
       event.preventDefault();
       setActiveIndex((current) =>
-        filtered.length === 0 ? 0 : (current + 1) % filtered.length,
+        ordered.length === 0 ? 0 : (current + 1) % ordered.length,
       );
       return;
     }
@@ -214,16 +234,16 @@ export function CommandPalette({
     if (event.key === "ArrowUp") {
       event.preventDefault();
       setActiveIndex((current) =>
-        filtered.length === 0
+        ordered.length === 0
           ? 0
-          : (current - 1 + filtered.length) % filtered.length,
+          : (current - 1 + ordered.length) % ordered.length,
       );
       return;
     }
 
     if (event.key === "Enter") {
       event.preventDefault();
-      select(filtered[activeIndex]);
+      select(ordered[activeIndex]);
     }
   };
 
@@ -239,7 +259,7 @@ export function CommandPalette({
       </h2>
 
       <div className="flex items-center gap-3 border-b border-white/[0.07] px-4 py-3.5 sm:px-5">
-        <SearchIcon className="size-[18px] shrink-0 text-neutral-500" />
+        <SearchIcon className="size-[18px] shrink-0 text-neutral-400" />
         <input
           ref={inputRef}
           value={query}
@@ -251,9 +271,9 @@ export function CommandPalette({
           placeholder="Search notes, trails, or commands..."
           aria-label="Search memex"
           autoComplete="off"
-          className="h-8 min-w-0 flex-1 bg-transparent text-[14px] text-white outline-none placeholder:text-neutral-500"
+          className="h-8 min-w-0 flex-1 bg-transparent text-[16px] text-white outline-none placeholder:text-neutral-400"
         />
-        <kbd className="hidden rounded-md border border-white/10 bg-white/[0.04] px-1.5 py-1 font-mono text-[9px] uppercase tracking-wider text-neutral-500 sm:block">
+        <kbd className="hidden rounded-md border border-white/10 bg-white/[0.04] px-1.5 py-1 font-mono text-[11.5px] uppercase tracking-wider text-neutral-400 sm:block">
           esc
         </kbd>
       </div>
@@ -264,10 +284,10 @@ export function CommandPalette({
             <span className="mx-auto grid size-11 place-items-center rounded-2xl border border-white/[0.08] bg-white/[0.03] text-neutral-400">
               <SparkIcon className="size-5" />
             </span>
-            <p className="mt-4 text-[13px] font-medium text-neutral-200">
+            <p className="mt-4 text-[15px] font-medium text-neutral-200">
               No note or trail matches “{query.trim()}”
             </p>
-            <p className="mt-1.5 text-[12px] text-mist-dim">
+            <p className="mt-1.5 text-[14px] text-mist-dim">
               Start a new note and memex will begin a trail for it.
             </p>
             <button
@@ -276,7 +296,7 @@ export function CommandPalette({
                 onClose();
                 onNewNote();
               }}
-              className="mt-5 inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.05] px-3.5 py-2 text-[12px] font-medium text-white transition hover:bg-white/[0.09]"
+              className="mt-5 inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.05] px-3.5 py-2 text-[14px] font-medium text-white transition hover:bg-white/[0.09]"
             >
               <PlusIcon className="size-4" />
               New note
@@ -285,12 +305,12 @@ export function CommandPalette({
         ) : (
           sections.map(([label, sectionItems]) => (
             <div key={label} className="mb-1.5 last:mb-0">
-              <p className="px-3 pb-1 pt-2 font-mono text-[8.5px] uppercase tracking-[0.26em] text-neutral-600">
+              <p className="px-3 pb-1 pt-2 font-mono text-[11px] uppercase tracking-[0.26em] text-neutral-500">
                 {label}
               </p>
               <div className="space-y-0.5">
                 {sectionItems.map((item) => {
-                  const flatIndex = filtered.indexOf(item);
+                  const flatIndex = ordered.indexOf(item);
                   const active = flatIndex === activeIndex;
 
                   return (
@@ -312,20 +332,20 @@ export function CommandPalette({
                         className={`grid size-8 shrink-0 place-items-center rounded-lg border ${
                           active
                             ? "border-white/15 bg-white/[0.07] text-white"
-                            : "border-white/[0.07] bg-white/[0.025] text-neutral-500"
+                            : "border-white/[0.07] bg-white/[0.025] text-neutral-400"
                         }`}
                       >
                         {item.icon}
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[12.5px] font-medium">
+                        <span className="block truncate text-[14.5px] font-medium">
                           {item.title}
                         </span>
-                        <span className="mt-0.5 block truncate text-[11px] text-neutral-500">
+                        <span className="mt-0.5 block truncate text-[13px] text-neutral-400">
                           {item.subtitle}
                         </span>
                       </span>
-                      <span className="shrink-0 font-mono text-[9px] uppercase tracking-wider text-neutral-600">
+                      <span className="shrink-0 font-mono text-[11.5px] uppercase tracking-wider text-neutral-500">
                         {item.kind === "action" ? "run" : "open"}
                       </span>
                     </button>
@@ -337,25 +357,25 @@ export function CommandPalette({
         )}
       </div>
 
-      <div className="flex items-center justify-between gap-4 border-t border-white/[0.06] px-4 py-2.5 text-[10px] text-neutral-600 sm:px-5">
+      <div className="flex items-center justify-between gap-4 border-t border-white/[0.06] px-4 py-2.5 text-[12px] text-neutral-500 sm:px-5">
         <div className="flex items-center gap-3">
           <span className="flex items-center gap-1">
-            <kbd className="rounded border border-white/10 bg-white/[0.03] px-1 py-0.5 font-mono text-[8.5px]">
+            <kbd className="rounded border border-white/10 bg-white/[0.03] px-1 py-0.5 font-mono text-[11px]">
               ↑
             </kbd>
-            <kbd className="rounded border border-white/10 bg-white/[0.03] px-1 py-0.5 font-mono text-[8.5px]">
+            <kbd className="rounded border border-white/10 bg-white/[0.03] px-1 py-0.5 font-mono text-[11px]">
               ↓
             </kbd>
             navigate
           </span>
           <span className="flex items-center gap-1">
-            <kbd className="rounded border border-white/10 bg-white/[0.03] px-1 py-0.5 font-mono text-[8.5px]">
+            <kbd className="rounded border border-white/10 bg-white/[0.03] px-1 py-0.5 font-mono text-[11px]">
               ↵
             </kbd>
             open
           </span>
         </div>
-        <span className="font-mono text-[8.5px] uppercase tracking-[0.18em]">
+        <span className="font-mono text-[11px] uppercase tracking-[0.18em]">
           associative search
         </span>
       </div>

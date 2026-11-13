@@ -127,16 +127,16 @@ export function SignUpCard() {
   if (sentTo) {
     return (
       <div className="auth-card p-7 sm:p-9">
-        <span className="font-mono text-[10px] uppercase tracking-[0.32em] text-mist-dim">
+        <span className="font-mono text-[12px] uppercase tracking-[0.32em] text-mist-dim">
           memex.ai
         </span>
         <div className="mt-8 grid size-11 place-items-center rounded-full border border-emerald-400/20 bg-emerald-400/[0.08] text-emerald-300/90">
           <CheckIcon />
         </div>
-        <h2 className="mt-5 text-[26px] font-medium tracking-[-0.035em] text-white">
+        <h2 className="mt-5 text-[28px] font-medium tracking-[-0.035em] text-white">
           Check your inbox
         </h2>
-        <p className="mt-2 text-[13.5px] leading-6 text-mist">
+        <p className="mt-2 text-[15.5px] leading-6 text-mist">
           We sent a confirmation link to{" "}
           <span className="text-white">{sentTo}</span>. Confirm your address to
           finish creating your workspace.
@@ -150,15 +150,15 @@ export function SignUpCard() {
 
   return (
     <div className="auth-card p-7 sm:p-9">
-      <span className="font-mono text-[10px] uppercase tracking-[0.32em] text-mist-dim">
+      <span className="font-mono text-[12px] uppercase tracking-[0.32em] text-mist-dim">
         memex.ai
       </span>
 
       <div className="mt-7">
-        <h2 className="text-[26px] font-medium tracking-[-0.035em] text-white">
+        <h2 className="text-[28px] font-medium tracking-[-0.035em] text-white">
           Create your workspace
         </h2>
-        <p className="mt-1.5 text-[13.5px] text-mist">
+        <p className="mt-1.5 text-[15.5px] text-mist">
           Start building your searchable memory.
         </p>
       </div>
@@ -166,10 +166,10 @@ export function SignUpCard() {
       {!configured ? (
         <div
           role="status"
-          className="mt-6 rounded-xl border border-white/10 bg-white/[0.03] px-3.5 py-3 text-[12px] leading-5 text-mist"
+          className="mt-6 rounded-xl border border-white/10 bg-white/[0.03] px-3.5 py-3 text-[14px] leading-5 text-mist"
         >
           Supabase credentials are missing. Add them to{" "}
-          <span className="font-mono text-[11px] text-neutral-200">.env.local</span>{" "}
+          <span className="font-mono text-[13px] text-neutral-200">.env.local</span>{" "}
           to enable sign-up.
         </div>
       ) : null}
@@ -182,7 +182,7 @@ export function SignUpCard() {
         />
       </div>
 
-      <div className="my-6 flex items-center gap-3 text-[10.5px] uppercase tracking-[0.18em] text-mist-dim">
+      <div className="my-6 flex items-center gap-3 text-[13px] uppercase tracking-[0.18em] text-mist-dim">
         <span className="h-px flex-1 bg-white/10" />
         or use email
         <span className="h-px flex-1 bg-white/10" />
@@ -230,7 +230,7 @@ export function SignUpCard() {
               type="button"
               onClick={() => setShowPassword((value) => !value)}
               aria-label={showPassword ? "Hide password" : "Show password"}
-              className="grid size-8 place-items-center rounded-lg text-neutral-500 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
+              className="grid size-8 place-items-center rounded-lg text-neutral-400 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
             >
               {showPassword ? <EyeOffIcon /> : <EyeIcon />}
             </button>
@@ -258,7 +258,7 @@ export function SignUpCard() {
         {formError ? (
           <div
             role="alert"
-            className="rounded-xl border border-red-400/20 bg-red-500/[0.07] px-3 py-2.5 text-[12.5px] leading-5 text-red-200/90"
+            className="rounded-xl border border-red-400/20 bg-red-500/[0.07] px-3 py-2.5 text-[14.5px] leading-5 text-red-200/90"
           >
             {formError}
           </div>
@@ -276,7 +276,7 @@ export function SignUpCard() {
         </button>
       </form>
 
-      <p className="mt-6 text-center text-[13px] text-mist">
+      <p className="mt-6 text-center text-[15px] text-mist">
         Already have an account?{" "}
         <Link
           href="/sign-in"

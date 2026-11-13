@@ -1,4 +1,5 @@
 import type { Note, Trail, TrailNode } from "@/lib/dashboard/data";
+import { provenanceOf } from "@/lib/rag/types";
 import type { TrailApi } from "@/lib/trails/api";
 
 const GENERATED_PREFIX = "gen-";
@@ -25,13 +26,21 @@ export function trailToWorkspace(api: TrailApi): { notes: Note[]; trail: Trail }
   const notes: Note[] = api.steps.map((step) => ({
     id: `chunk-${step.chunkId}`,
     title: step.documentTitle,
-    excerpt: step.excerpt,
-    body: step.excerpt,
+    excerpt: step.gist ?? step.quote ?? step.excerpt,
+    body: step.content,
     tag: `${step.documentTitle} · p.${step.page}`,
     kind: "quote",
     updatedAt: "Just now",
     pinned: false,
     source: step.documentTitle,
+    chunkId: step.chunkId,
+    sourceOrigin: step.sourceOrigin,
+    ...(step.sourceUrl ? { sourceUrl: step.sourceUrl } : {}),
+    ...(step.sourceDomain ? { sourceDomain: step.sourceDomain } : {}),
+    ...(step.sourceProvider ? { sourceProvider: step.sourceProvider } : {}),
+    ...(step.retrievedAt ? { retrievedAt: step.retrievedAt } : {}),
+    ...(step.gist ? { gist: step.gist } : {}),
+    ...(step.quote ? { quote: step.quote } : {}),
   }));
 
   const nodes: TrailNode[] = api.steps.map((step) => ({
@@ -40,6 +49,7 @@ export function trailToWorkspace(api: TrailApi): { notes: Note[]; trail: Trail }
     label: step.documentTitle,
     kind: "quote",
     relation: step.note,
+    sourceOrigin: step.sourceOrigin,
   }));
 
   return {
@@ -51,8 +61,22 @@ export function trailToWorkspace(api: TrailApi): { notes: Note[]; trail: Trail }
       updatedAt: "Just now",
       saved: true,
       nodes,
+      origin: provenanceOf(api.steps.map((step) => step.sourceOrigin)),
     },
   };
+}
+
+/**
+ * The chunk a note cites. Older cached generated notes predate `chunkId`
+ * but still carry it in their `chunk-<id>` note id.
+ */
+export function chunkIdOf(note: Pick<Note, "id" | "chunkId">): number | null {
+  if (typeof note.chunkId === "number") {
+    return note.chunkId;
+  }
+
+  const match = /^chunk-(\d+)$/.exec(note.id);
+  return match ? Number(match[1]) : null;
 }
 
 /** Put incoming notes first, replacing duplicates but keeping their pinned state. */

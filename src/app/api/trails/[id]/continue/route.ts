@@ -1,18 +1,18 @@
 import { NextResponse } from "next/server";
 
-import { EmbeddingError, isEmbeddingConfigured } from "@/lib/ingestion/embeddings";
+import { isEmbeddingConfigured } from "@/lib/ingestion/embeddings";
+import { buildHybridContinuation } from "@/lib/rag/pipeline";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { continueTrail, TrailGenerationError } from "@/lib/trails/generate";
+import type { TrailApi } from "@/lib/trails/api";
+import { appendGeneratedTrail } from "@/lib/trails/persist";
 import {
-  findCandidates,
-  hasCoverage,
-  loadTrail,
-  LOW_COVERAGE_MESSAGE,
-  TrailError,
-  trailSetupHint,
-} from "@/lib/trails/server";
+  createTrailStreamResponse,
+  trailErrorResponse,
+} from "@/lib/trails/responses";
+import { loadTrail } from "@/lib/trails/server";
 
-export const maxDuration = 300;
+// Keep in sync with TRAIL_MAX_DURATION_SECONDS in lib/trails/timeouts.ts.
+export const maxDuration = 60;
 
 const QUESTION_MIN_CHARS = 3;
 const QUESTION_MAX_CHARS = 500;
@@ -21,23 +21,6 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null;
-}
-
-function errorResponse(error: unknown) {
-  if (
-    error instanceof TrailError ||
-    error instanceof EmbeddingError ||
-    error instanceof TrailGenerationError
-  ) {
-    return NextResponse.json({ error: error.message }, { status: error.status });
-  }
-
-  console.error("[trails/:id/continue]", error);
-
-  return NextResponse.json(
-    { error: "Something went wrong while continuing this trail. Try again." },
-    { status: 500 },
-  );
 }
 
 export async function POST(
@@ -71,7 +54,7 @@ export async function POST(
     return NextResponse.json(
       {
         error:
-          "GEMINI_API_KEY is not configured. Add it to .env.local to generate trails.",
+          "GEMINI_API_KEY is not configured. Add it to .env.local to search your library for trails.",
       },
       { status: 503 },
     );
@@ -108,59 +91,39 @@ export async function POST(
 
   const { id } = await context.params;
 
+  let trail: TrailApi | null;
+
   try {
-    const trail = await loadTrail(supabase, user.id, id);
-
-    if (!trail) {
-      return NextResponse.json({ error: "Trail not found." }, { status: 404 });
-    }
-
-    const lastStep = trail.steps.at(-1);
-    const existingChunkIds = new Set(trail.steps.map((step) => step.chunkId));
-
-    // Anchor retrieval on where the trail currently ends so the continuation
-    // stays connected to it, not only to the follow-up question.
-    const retrievalQuery = lastStep
-      ? `${question}\n\n${lastStep.note}\n\n${lastStep.excerpt}`
-      : question;
-
-    const candidates = await findCandidates(
-      supabase,
-      retrievalQuery,
-      30,
-      existingChunkIds,
-    );
-
-    if (!hasCoverage(candidates)) {
-      return NextResponse.json({ error: LOW_COVERAGE_MESSAGE }, { status: 422 });
-    }
-
-    const continued = await continueTrail(trail, question, candidates);
-
-    const appended = await supabase.rpc("append_generated_trail_steps", {
-      p_trail_id: trail.id,
-      p_steps: continued.steps.map((step) => ({
-        chunk_id: step.chunkId,
-        note: step.note,
-      })),
-    });
-
-    if (appended.error) {
-      throw new TrailError(
-        trailSetupHint(appended.error.message, "continuing trails") ??
-          "Could not save the new steps on this trail.",
-        503,
-      );
-    }
-
-    const updated = await loadTrail(supabase, user.id, trail.id);
-
-    if (!updated) {
-      return NextResponse.json({ error: "Trail not found." }, { status: 404 });
-    }
-
-    return NextResponse.json({ trail: updated });
+    trail = await loadTrail(supabase, user.id, id);
   } catch (error) {
-    return errorResponse(error);
+    return trailErrorResponse(
+      error,
+      "Something went wrong while loading this trail. Try again.",
+    );
   }
+
+  if (!trail) {
+    return NextResponse.json({ error: "Trail not found." }, { status: 404 });
+  }
+
+  return createTrailStreamResponse(
+    async (onProgress) => {
+      const result = await buildHybridContinuation({
+        supabase,
+        userId: user.id,
+        trail,
+        question,
+        onProgress,
+      });
+
+      return appendGeneratedTrail({
+        supabase,
+        userId: user.id,
+        trail,
+        steps: result.continued.steps,
+        candidates: result.candidates,
+      });
+    },
+    "Something went wrong while continuing this trail. Try again.",
+  );
 }

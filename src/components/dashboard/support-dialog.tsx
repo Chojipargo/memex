@@ -173,10 +173,10 @@ export function SupportDialog({
             key={value}
             type="button"
             onClick={() => setTab(value)}
-            className={`rounded-lg px-3 py-1.5 text-[11.5px] font-medium transition ${
+            className={`rounded-lg px-3 py-1.5 text-[13.5px] font-medium transition ${
               tab === value
                 ? "bg-white/[0.08] text-white"
-                : "text-neutral-500 hover:bg-white/[0.035] hover:text-neutral-200"
+                : "text-neutral-400 hover:bg-white/[0.035] hover:text-neutral-200"
             }`}
           >
             {label}
@@ -199,10 +199,10 @@ export function SupportDialog({
                 <span className="grid size-8 place-items-center rounded-lg border border-white/[0.08] bg-white/[0.03] text-neutral-400 transition group-hover:text-white">
                   <Icon className="size-4" />
                 </span>
-                <p className="mt-3 text-[12.5px] font-medium text-neutral-100">
+                <p className="mt-3 text-[14.5px] font-medium text-neutral-100">
                   {topic.title}
                 </p>
-                <p className="mt-1.5 text-[11.5px] leading-5 text-neutral-500">
+                <p className="mt-1.5 text-[13.5px] leading-5 text-neutral-400">
                   {topic.detail}
                 </p>
               </button>
@@ -212,16 +212,16 @@ export function SupportDialog({
           <div className="rounded-2xl border border-white/[0.07] bg-gradient-to-b from-white/[0.045] to-transparent p-4 sm:col-span-2">
             <div className="flex items-center gap-2 text-neutral-300">
               <SparkIcon className="size-4" />
-              <p className="text-[12px] font-medium">Still stuck?</p>
+              <p className="text-[14px] font-medium">Still stuck?</p>
             </div>
-            <p className="mt-1.5 text-[11.5px] leading-5 text-neutral-500">
+            <p className="mt-1.5 text-[13.5px] leading-5 text-neutral-400">
               The archivist can explain any feature or help you find the next
               connection in your library.
             </p>
             <button
               type="button"
               onClick={() => setTab("assistant")}
-              className="mt-3 rounded-lg border border-white/[0.1] bg-white/[0.05] px-3 py-1.5 text-[11.5px] font-medium text-white transition hover:bg-white/[0.09]"
+              className="mt-3 rounded-lg border border-white/[0.1] bg-white/[0.05] px-3 py-1.5 text-[13.5px] font-medium text-white transition hover:bg-white/[0.09]"
             >
               Open assistant
             </button>
@@ -236,7 +236,7 @@ export function SupportDialog({
                 className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
               >
                 <div
-                  className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-[12px] leading-5 ${
+                  className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-[14px] leading-5 ${
                     message.role === "user"
                       ? "rounded-br-md bg-white text-neutral-950"
                       : "rounded-bl-md border border-white/[0.08] bg-white/[0.035] text-neutral-300"
@@ -249,7 +249,7 @@ export function SupportDialog({
 
             {thinking ? (
               <div className="flex justify-start">
-                <div className="flex items-center gap-1.5 rounded-2xl rounded-bl-md border border-white/[0.08] bg-white/[0.035] px-4 py-3 text-neutral-500">
+                <div className="flex items-center gap-1.5 rounded-2xl rounded-bl-md border border-white/[0.08] bg-white/[0.035] px-4 py-3 text-neutral-400">
                   {[0, 1, 2].map((dot) => (
                     <span
                       key={dot}
@@ -272,7 +272,7 @@ export function SupportDialog({
               onChange={(event) => setInput(event.target.value)}
               placeholder="Ask about trails, search, privacy..."
               aria-label="Ask the archivist"
-              className="h-10 min-w-0 flex-1 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3.5 text-[12.5px] text-white outline-none placeholder:text-neutral-600 focus:border-white/20"
+              className="h-10 min-w-0 flex-1 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3.5 text-[14.5px] text-white outline-none placeholder:text-neutral-500 focus:border-white/20"
             />
             <button
               type="submit"

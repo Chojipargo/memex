@@ -42,12 +42,12 @@ export function ReadyCard({
       </span>
 
       <div className="min-w-0 flex-1">
-        <p className="font-mono text-[9px] uppercase tracking-[0.22em] text-neutral-500">
+        <p className="font-mono text-[11.5px] uppercase tracking-[0.22em] text-neutral-400">
           Ready
         </p>
-        <p className="mt-1 truncate text-[13px] text-neutral-200">
+        <p className="mt-1 truncate text-[15px] text-neutral-200">
           <span className="font-medium text-white">{source.title}</span>{" "}
-          <span className="text-neutral-500">is ready · {passages}</span>
+          <span className="text-neutral-400">is ready · {passages}</span>
         </p>
       </div>
 
@@ -55,7 +55,7 @@ export function ReadyCard({
         <button
           type="button"
           onClick={onAsk}
-          className="group inline-flex h-9 items-center gap-2 rounded-xl bg-white px-3.5 text-[11.5px] font-medium text-neutral-950 transition hover:bg-neutral-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-ink-950"
+          className="group inline-flex h-9 items-center gap-2 rounded-xl bg-white px-3.5 text-[13.5px] font-medium text-neutral-950 transition hover:bg-neutral-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-ink-950"
         >
           Ask about this source
           <ArrowRightIcon className="size-3.5 transition-transform duration-200 group-hover:translate-x-0.5" />
@@ -64,7 +64,7 @@ export function ReadyCard({
           type="button"
           onClick={onDismiss}
           aria-label={`Dismiss: ${source.title} is ready`}
-          className="grid size-9 place-items-center rounded-xl border border-white/[0.08] bg-white/[0.03] text-neutral-500 transition hover:border-white/15 hover:bg-white/[0.07] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+          className="grid size-9 place-items-center rounded-xl border border-white/[0.08] bg-white/[0.03] text-neutral-400 transition hover:border-white/15 hover:bg-white/[0.07] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
         >
           <CloseIcon className="size-3.5" />
         </button>

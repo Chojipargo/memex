@@ -26,15 +26,15 @@ export function AuthShell({ children }: { children: ReactNode }) {
           <BrandMark />
 
           <div className="mt-8 lg:mt-24">
-            <p className="font-mono text-[10.5px] uppercase tracking-[0.32em] text-mist-dim">
+            <p className="font-mono text-[13px] uppercase tracking-[0.32em] text-mist-dim">
               Personal knowledge OS
             </p>
             <h1 className="mt-5 text-[2.15rem] font-semibold leading-[1.03] tracking-[-0.045em] text-white sm:text-5xl lg:text-[4.1rem]">
               Every thought,
               <br />
-              <span className="text-neutral-500">within reach.</span>
+              <span className="text-neutral-400">within reach.</span>
             </h1>
-            <p className="mt-4 hidden max-w-md text-[15px] leading-7 text-mist sm:block lg:mt-6">
+            <p className="mt-4 hidden max-w-md text-[17px] leading-7 text-mist sm:block lg:mt-6">
               memex.ai turns scattered notes, documents and ideas into one
               searchable memory — private by default.
             </p>
@@ -42,7 +42,7 @@ export function AuthShell({ children }: { children: ReactNode }) {
 
           <div className="mt-10 hidden items-center gap-3 lg:mt-24 lg:flex">
             <span className="h-px w-10 bg-line-strong" />
-            <span className="text-[11px] tracking-wide text-mist-dim">
+            <span className="text-[13px] tracking-wide text-mist-dim">
               Supabase Auth · PostgreSQL
             </span>
           </div>

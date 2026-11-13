@@ -56,16 +56,16 @@ export function ForgotPasswordCard() {
   if (sentTo) {
     return (
       <div className="auth-card p-7 sm:p-9">
-        <span className="font-mono text-[10px] uppercase tracking-[0.32em] text-mist-dim">
+        <span className="font-mono text-[12px] uppercase tracking-[0.32em] text-mist-dim">
           memex.ai
         </span>
         <div className="mt-8 grid size-11 place-items-center rounded-full border border-emerald-400/20 bg-emerald-400/[0.08] text-emerald-300/90">
           <CheckIcon />
         </div>
-        <h2 className="mt-5 text-[26px] font-medium tracking-[-0.035em] text-white">
+        <h2 className="mt-5 text-[28px] font-medium tracking-[-0.035em] text-white">
           Check your inbox
         </h2>
-        <p className="mt-2 text-[13.5px] leading-6 text-mist">
+        <p className="mt-2 text-[15.5px] leading-6 text-mist">
           If an account exists for{" "}
           <span className="text-white">{sentTo}</span>, we sent a link to reset
           your password.
@@ -79,15 +79,15 @@ export function ForgotPasswordCard() {
 
   return (
     <div className="auth-card p-7 sm:p-9">
-      <span className="font-mono text-[10px] uppercase tracking-[0.32em] text-mist-dim">
+      <span className="font-mono text-[12px] uppercase tracking-[0.32em] text-mist-dim">
         memex.ai
       </span>
 
       <div className="mt-7">
-        <h2 className="text-[26px] font-medium tracking-[-0.035em] text-white">
+        <h2 className="text-[28px] font-medium tracking-[-0.035em] text-white">
           Reset your password
         </h2>
-        <p className="mt-1.5 text-[13.5px] leading-6 text-mist">
+        <p className="mt-1.5 text-[15.5px] leading-6 text-mist">
           Enter your email and we&apos;ll send you a secure reset link.
         </p>
       </div>
@@ -95,10 +95,10 @@ export function ForgotPasswordCard() {
       {!configured ? (
         <div
           role="status"
-          className="mt-6 rounded-xl border border-white/10 bg-white/[0.03] px-3.5 py-3 text-[12px] leading-5 text-mist"
+          className="mt-6 rounded-xl border border-white/10 bg-white/[0.03] px-3.5 py-3 text-[14px] leading-5 text-mist"
         >
           Supabase credentials are missing. Add them to{" "}
-          <span className="font-mono text-[11px] text-neutral-200">.env.local</span>{" "}
+          <span className="font-mono text-[13px] text-neutral-200">.env.local</span>{" "}
           to enable password resets.
         </div>
       ) : null}
@@ -124,7 +124,7 @@ export function ForgotPasswordCard() {
         {formError ? (
           <div
             role="alert"
-            className="rounded-xl border border-red-400/20 bg-red-500/[0.07] px-3 py-2.5 text-[12.5px] leading-5 text-red-200/90"
+            className="rounded-xl border border-red-400/20 bg-red-500/[0.07] px-3 py-2.5 text-[14.5px] leading-5 text-red-200/90"
           >
             {formError}
           </div>
@@ -142,7 +142,7 @@ export function ForgotPasswordCard() {
         </button>
       </form>
 
-      <p className="mt-6 text-center text-[13px] text-mist">
+      <p className="mt-6 text-center text-[15px] text-mist">
         Remembered it?{" "}
         <Link
           href="/sign-in"

@@ -1,19 +1,18 @@
 import { NextResponse } from "next/server";
 
-import { EmbeddingError, isEmbeddingConfigured } from "@/lib/ingestion/embeddings";
+import { isEmbeddingConfigured } from "@/lib/ingestion/embeddings";
+import { buildHybridTrail } from "@/lib/rag/pipeline";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import type { TrailApi, TrailApiStep, TrailSummary } from "@/lib/trails/api";
-import { generateTrail, TrailGenerationError } from "@/lib/trails/generate";
+import type { TrailSummary } from "@/lib/trails/api";
+import { createGeneratedTrail } from "@/lib/trails/persist";
 import {
-  findCandidates,
-  hasCoverage,
-  LOW_COVERAGE_MESSAGE,
-  makeExcerpt,
-  TrailError,
-  trailSetupHint,
-} from "@/lib/trails/server";
+  createTrailStreamResponse,
+  trailErrorResponse,
+} from "@/lib/trails/responses";
+import { TrailError, trailSetupHint } from "@/lib/trails/server";
 
-export const maxDuration = 300;
+// Keep in sync with TRAIL_MAX_DURATION_SECONDS in lib/trails/timeouts.ts.
+export const maxDuration = 60;
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -66,27 +65,6 @@ function parseTrailSummaries(value: unknown): TrailSummary[] | null {
   return trails;
 }
 
-function errorResponse(error: unknown) {
-  if (error instanceof TrailError) {
-    return NextResponse.json({ error: error.message }, { status: error.status });
-  }
-
-  if (error instanceof EmbeddingError) {
-    return NextResponse.json({ error: error.message }, { status: error.status });
-  }
-
-  if (error instanceof TrailGenerationError) {
-    return NextResponse.json({ error: error.message }, { status: error.status });
-  }
-
-  console.error("[trails]", error);
-
-  return NextResponse.json(
-    { error: "Something went wrong while building this trail. Try again." },
-    { status: 500 },
-  );
-}
-
 export async function POST(request: Request) {
   const supabase = await createServerSupabaseClient();
 
@@ -115,7 +93,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error:
-          "GEMINI_API_KEY is not configured. Add it to .env.local to generate trails.",
+          "GEMINI_API_KEY is not configured. Add it to .env.local to search your library for trails.",
       },
       { status: 503 },
     );
@@ -133,8 +111,21 @@ export async function POST(request: Request) {
   }
 
   const body = asRecord(payload);
-  const question =
+  const rawQuestion =
     body && typeof body.question === "string" ? body.question.trim() : "";
+  const mode = body?.mode === "research" ? "research" : "auto";
+  const rawUrl = body && typeof body.url === "string" ? body.url.trim() : "";
+
+  if (rawUrl.length > 2000) {
+    return NextResponse.json(
+      { error: "URLs are limited to 2000 characters." },
+      { status: 400 },
+    );
+  }
+
+  const question = (
+    rawQuestion || (rawUrl ? `Research this source: ${rawUrl}` : "")
+  ).slice(0, 1000);
 
   if (question.length < 3) {
     return NextResponse.json(
@@ -143,87 +134,33 @@ export async function POST(request: Request) {
     );
   }
 
-  if (question.length > 500) {
+  if (question.length > 500 && !rawUrl) {
     return NextResponse.json(
       { error: "Questions are limited to 500 characters." },
       { status: 400 },
     );
   }
 
-  try {
-    const candidates = await findCandidates(supabase, question, 30);
+  return createTrailStreamResponse(
+    async (onProgress) => {
+      const result = await buildHybridTrail({
+        supabase,
+        userId: user.id,
+        question,
+        mode,
+        url: rawUrl || null,
+        onProgress,
+      });
 
-    // Skip the LLM entirely when nothing in the library is close enough.
-    if (!hasCoverage(candidates)) {
-      return NextResponse.json({ error: LOW_COVERAGE_MESSAGE }, { status: 422 });
-    }
-
-    const generated = await generateTrail(question, candidates);
-    const steps = generated.steps.map((step) => ({
-      chunk_id: step.chunkId,
-      note: step.note,
-    }));
-
-    const saved = await supabase.rpc("create_generated_trail", {
-      p_question: question,
-      p_title: generated.title,
-      p_model: generated.model,
-      p_steps: steps,
-    });
-
-    if (saved.error) {
-      throw new TrailError(
-        trailSetupHint(saved.error.message, "building trails") ?? "Could not save the generated trail.",
-        503,
-      );
-    }
-
-    const trailId = asNonEmptyString(saved.data);
-
-    if (!trailId) {
-      throw new TrailError(
-        "The trail service returned an unexpected response.",
-        502,
-      );
-    }
-
-    const candidatesById = new Map(
-      candidates.map((candidate) => [candidate.chunkId, candidate]),
-    );
-    const apiSteps: TrailApiStep[] = generated.steps.map((step, index) => {
-      const candidate = candidatesById.get(step.chunkId);
-
-      if (!candidate) {
-        throw new TrailError(
-          "The generated trail cited a passage outside your library.",
-          502,
-        );
-      }
-
-      return {
-        position: index + 1,
-        chunkId: step.chunkId,
-        documentId: candidate.documentId,
-        documentTitle: candidate.documentTitle,
-        page: candidate.page,
-        note: step.note,
-        excerpt: makeExcerpt(candidate.content),
-      };
-    });
-
-    const trail: TrailApi = {
-      id: trailId,
-      question,
-      title: generated.title,
-      model: generated.model,
-      createdAt: new Date().toISOString(),
-      steps: apiSteps,
-    };
-
-    return NextResponse.json({ trail }, { status: 201 });
-  } catch (error) {
-    return errorResponse(error);
-  }
+      return createGeneratedTrail({
+        supabase,
+        question,
+        generated: result.generated,
+        candidates: result.candidates,
+      });
+    },
+    "Something went wrong while building this trail. Try again.",
+  );
 }
 
 export async function GET() {
@@ -276,6 +213,9 @@ export async function GET() {
 
     return NextResponse.json({ trails });
   } catch (error) {
-    return errorResponse(error);
+    return trailErrorResponse(
+      error,
+      "Something went wrong while loading your trails. Try again.",
+    );
   }
 }

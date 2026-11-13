@@ -50,8 +50,8 @@ function SetupNotice({ title, message }: { title: string; message: string }) {
     <div className="flex items-start gap-3 rounded-xl border border-white/[0.1] bg-white/[0.035] p-4">
       <AlertIcon className="mt-0.5 size-4 shrink-0 text-neutral-300" />
       <div>
-        <p className="text-[12px] font-medium text-neutral-100">{title}</p>
-        <p className="mt-1 text-[11px] leading-5 text-mist">{message}</p>
+        <p className="text-[14px] font-medium text-neutral-100">{title}</p>
+        <p className="mt-1 text-[13px] leading-5 text-mist">{message}</p>
       </div>
     </div>
   );
@@ -113,8 +113,8 @@ async function LibraryContent() {
   if (documents.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-white/[0.08] px-4 py-6 text-center">
-        <FileTextIcon className="mx-auto size-4 text-neutral-600" />
-        <p className="mt-2 text-[11.5px] text-neutral-500">
+        <FileTextIcon className="mx-auto size-4 text-neutral-500" />
+        <p className="mt-2 text-[13.5px] text-neutral-400">
           The library is empty. Use Upload to add your first source.
         </p>
       </div>
@@ -132,14 +132,14 @@ async function LibraryContent() {
 
         return (
           <li key={document.document_id} className="group flex items-center gap-3 py-2.5">
-            <span className="grid size-8 shrink-0 place-items-center rounded-lg border border-white/[0.07] bg-white/[0.025] text-neutral-500 transition group-hover:text-neutral-200">
+            <span className="grid size-8 shrink-0 place-items-center rounded-lg border border-white/[0.07] bg-white/[0.025] text-neutral-400 transition group-hover:text-neutral-200">
               <Icon className="size-3.5" />
             </span>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-[11.5px] font-medium text-neutral-200">
+              <p className="truncate text-[13.5px] font-medium text-neutral-200">
                 {document.title}
               </p>
-              <p className="mt-0.5 truncate text-[9.5px] text-neutral-600">
+              <p className="mt-0.5 truncate text-[12px] text-neutral-500">
                 {isNote ? "Note" : isImage ? "Image" : "PDF"} ·{" "}
                 {chunkCount.toLocaleString("en-US")} chunks ·{" "}
                 {dateFormatter.format(new Date(document.created_at))}

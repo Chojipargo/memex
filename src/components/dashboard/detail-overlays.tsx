@@ -4,6 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 
 import { ContinueTrail } from "@/components/dashboard/continue-trail";
+import {
+  originProvenance,
+  ProvenancePill,
+} from "@/components/dashboard/provenance-pill";
+import { TrailStepCard } from "@/components/dashboard/trail-step-card";
 import { CenteredStage, DrawerFrame } from "@/components/dashboard/overlay";
 import {
   ArrowLeftIcon,
@@ -17,7 +22,12 @@ import {
 } from "@/components/ui/dashboard-icons";
 import type { Association, Note, Trail, TrailNode } from "@/lib/dashboard/data";
 import type { TrailApi } from "@/lib/trails/api";
-import { apiTrailIdOf } from "@/lib/trails/to-workspace";
+import { apiTrailIdOf, chunkIdOf } from "@/lib/trails/to-workspace";
+
+/** Drop the " (1) (1)" suffixes that duplicate uploads pick up from the OS. */
+function displayTitle(label: string): string {
+  return label.replace(/(?:\s*\(\d+\))+$/, "").trim() || label;
+}
 
 function kindLabel(kind: Note["kind"]) {
   if (kind === "quote") return "Quotation";
@@ -41,6 +51,8 @@ export function TrailDetailDialog({
   onBranch,
   onTrailContinued,
   onUploadSource,
+  onNewQuestion,
+  onOpenCitation,
 }: {
   trail: Trail | null;
   notes: Note[];
@@ -56,6 +68,9 @@ export function TrailDetailDialog({
   onBranch: (node: TrailNode) => void;
   onTrailContinued: (trail: TrailApi) => void;
   onUploadSource: () => void;
+  onOpenCitation: (note: Note) => void;
+  /** Close the trail and ask a fresh question (optionally pre-filled). */
+  onNewQuestion: (question?: string) => void;
 }) {
   const isActive = trail?.id === activeTrailId;
   const apiTrailId = trail ? apiTrailIdOf(trail) : null;
@@ -107,7 +122,7 @@ export function TrailDetailDialog({
         disabled={trailPosition.total <= 1}
         aria-label="Previous trail"
         title="Previous trail"
-        className="inline-flex h-8 items-center gap-1.5 rounded-full px-2.5 text-[10.5px] text-neutral-400 transition hover:bg-white/[0.07] hover:text-white disabled:cursor-not-allowed disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+        className="inline-flex h-8 items-center gap-1.5 rounded-full px-2.5 text-[13px] text-neutral-400 transition hover:bg-white/[0.07] hover:text-white disabled:cursor-not-allowed disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
       >
         <ArrowLeftIcon className="size-3.5" />
         <span className="hidden sm:inline">Previous trail</span>
@@ -116,7 +131,7 @@ export function TrailDetailDialog({
       <span
         role="status"
         aria-live="polite"
-        className="min-w-[5.5rem] px-2 text-center font-mono text-[9px] uppercase tracking-[0.16em] text-neutral-500"
+        className="min-w-[5.5rem] px-2 text-center font-mono text-[11.5px] uppercase tracking-[0.16em] text-neutral-400"
       >
         Trail {trailPosition.current} of {trailPosition.total}
       </span>
@@ -127,7 +142,7 @@ export function TrailDetailDialog({
         disabled={trailPosition.total <= 1}
         aria-label="Next trail"
         title="Next trail"
-        className="inline-flex h-8 items-center gap-1.5 rounded-full px-2.5 text-[10.5px] text-neutral-400 transition hover:bg-white/[0.07] hover:text-white disabled:cursor-not-allowed disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+        className="inline-flex h-8 items-center gap-1.5 rounded-full px-2.5 text-[13px] text-neutral-400 transition hover:bg-white/[0.07] hover:text-white disabled:cursor-not-allowed disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
       >
         <span className="hidden sm:inline">Next trail</span>
         <ArrowRightIcon className="size-3.5" />
@@ -154,20 +169,21 @@ export function TrailDetailDialog({
           <div className="flex shrink-0 items-start justify-between gap-5 border-b border-white/[0.07] px-5 py-5 sm:px-7 sm:py-6">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-white/[0.09] bg-white/[0.03] px-2.5 py-1 font-mono text-[8.5px] uppercase tracking-[0.16em] text-neutral-400">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-white/[0.09] bg-white/[0.03] px-2.5 py-1 font-mono text-[11px] uppercase tracking-[0.16em] text-neutral-400">
                   <TrailsIcon className="size-3" />
                   Trail
                 </span>
                 {isActive ? (
-                  <span className="rounded-full border border-white/15 bg-white/[0.08] px-2.5 py-1 font-mono text-[8.5px] uppercase tracking-[0.16em] text-white">
+                  <span className="rounded-full border border-white/15 bg-white/[0.08] px-2.5 py-1 font-mono text-[11px] uppercase tracking-[0.16em] text-white">
                     active
                   </span>
                 ) : null}
                 {trail.saved ? (
-                  <span className="rounded-full border border-white/[0.08] bg-white/[0.025] px-2.5 py-1 font-mono text-[8.5px] uppercase tracking-[0.16em] text-neutral-500">
+                  <span className="rounded-full border border-white/[0.08] bg-white/[0.025] px-2.5 py-1 font-mono text-[11px] uppercase tracking-[0.16em] text-neutral-400">
                     saved
                   </span>
                 ) : null}
+                <ProvenancePill provenance={trail.origin ?? "library"} />
               </div>
 
               <h2
@@ -176,7 +192,7 @@ export function TrailDetailDialog({
               >
                 {trail.title}
               </h2>
-              <p className="mt-2 max-w-xl text-[12.5px] leading-6 text-mist">
+              <p className="mt-2 max-w-xl text-[14.5px] leading-6 text-mist">
                 {trail.description}
               </p>
             </div>
@@ -194,29 +210,29 @@ export function TrailDetailDialog({
           <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-7 sm:py-6">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
-                <p className="font-mono text-[9px] uppercase tracking-[0.22em] text-neutral-500">
+                <p className="font-mono text-[11.5px] uppercase tracking-[0.22em] text-neutral-400">
                   The path
                 </p>
                 <span
                   aria-live="polite"
-                  className="rounded-full border border-white/[0.08] bg-white/[0.025] px-2 py-0.5 font-mono text-[8px] uppercase tracking-[0.14em] text-neutral-500"
+                  className="rounded-full border border-white/[0.08] bg-white/[0.025] px-2 py-0.5 font-mono text-[10.5px] uppercase tracking-[0.14em] text-neutral-400"
                 >
                   Note{" "}
                   {trail.nodes.length === 0 ? 0 : focusedNodeIndex + 1} of{" "}
                   {trail.nodes.length}
                 </span>
               </div>
-              <p className="text-[11px] text-neutral-600">
+              <p className="text-[13px] text-neutral-500">
                 {trail.nodes.length} notes · {trail.updatedAt}
               </p>
             </div>
 
             {trail.nodes.length > 1 ? (
-              <p className="mb-3 flex flex-wrap items-center gap-1.5 text-[10px] text-neutral-600">
-                <kbd className="rounded border border-white/[0.09] bg-white/[0.03] px-1.5 py-0.5 font-mono text-[9px] text-neutral-400">
+              <p className="mb-3 flex flex-wrap items-center gap-1.5 text-[12px] text-neutral-500">
+                <kbd className="rounded border border-white/[0.09] bg-white/[0.03] px-1.5 py-0.5 font-mono text-[11.5px] text-neutral-400">
                   ←
                 </kbd>
-                <kbd className="rounded border border-white/[0.09] bg-white/[0.03] px-1.5 py-0.5 font-mono text-[9px] text-neutral-400">
+                <kbd className="rounded border border-white/[0.09] bg-white/[0.03] px-1.5 py-0.5 font-mono text-[11.5px] text-neutral-400">
                   →
                 </kbd>
                 to move through notes · Enter to open
@@ -228,6 +244,7 @@ export function TrailDetailDialog({
                 const note = noteMap.get(node.noteId);
                 const isFocused = index === focusedNodeIndex;
                 const isNew = index >= appendedFrom;
+                const isPassage = note ? chunkIdOf(note) !== null : false;
 
                 return (
                   <motion.li
@@ -253,12 +270,12 @@ export function TrailDetailDialog({
                     {index < trail.nodes.length - 1 ? (
                       <span
                         aria-hidden="true"
-                        className="absolute left-[0.9rem] top-9 h-[calc(100%-0.5rem)] w-px bg-gradient-to-b from-white/15 to-white/[0.03]"
+                        className="absolute left-4 top-10 h-[calc(100%-0.5rem)] w-px bg-gradient-to-b from-white/15 to-white/[0.03]"
                       />
                     ) : null}
 
                     <span
-                      className={`relative z-10 mt-1 grid size-[1.8rem] shrink-0 place-items-center rounded-full border font-mono text-[9.5px] transition ${
+                      className={`relative z-10 mt-1 grid size-8 shrink-0 place-items-center rounded-full border font-mono text-[12px] transition ${
                         isFocused
                           ? "border-white/40 bg-white/[0.12] text-white"
                           : "border-white/[0.12] bg-ink-900 text-neutral-400"
@@ -269,13 +286,13 @@ export function TrailDetailDialog({
 
                     <div
                       aria-current={isFocused ? "step" : undefined}
-                      className={`min-w-0 flex-1 rounded-xl border p-3.5 transition ${
+                      className={`min-w-0 flex-1 rounded-2xl border p-4 transition sm:p-5 ${
                         isFocused
                           ? "border-white/25 bg-white/[0.06] shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_20px_60px_-36px_rgba(255,255,255,0.28)]"
-                          : "border-white/[0.07] bg-white/[0.025] hover:border-white/[0.13] hover:bg-white/[0.04]"
+                          : "border-white/[0.08] bg-white/[0.03] hover:border-white/[0.15] hover:bg-white/[0.045]"
                       }`}
                     >
-                      <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start justify-between gap-4">
                         <button
                           type="button"
                           ref={(element) => {
@@ -285,28 +302,42 @@ export function TrailDetailDialog({
                           disabled={!note}
                           className="min-w-0 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35"
                         >
-                          <p className="text-[10px] uppercase tracking-[0.16em] text-neutral-600">
-                            {node.relation}
-                          </p>
-                          <p className="mt-1 truncate text-[12.5px] font-medium text-neutral-100 transition hover:text-white">
-                            {node.label}
-                          </p>
-                          {note ? (
-                            <p className="mt-1 line-clamp-2 text-[11px] leading-5 text-neutral-500">
-                              {note.excerpt}
-                            </p>
-                          ) : null}
+                          <h3 className="line-clamp-2 break-words text-[16px] font-semibold leading-snug text-neutral-50 transition hover:text-white">
+                            {displayTitle(node.label)}
+                          </h3>
                         </button>
                         <button
                           type="button"
                           onClick={() => onBranch(node)}
-                          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.03] px-2.5 py-1.5 text-[10.5px] text-neutral-400 transition hover:border-white/15 hover:bg-white/[0.07] hover:text-white"
+                          className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-white/[0.12] bg-white/[0.04] px-3.5 py-2 text-[14px] font-medium text-neutral-200 transition hover:border-white/25 hover:bg-white/[0.09] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
                           aria-label={`Branch from ${node.label}`}
                         >
-                          <BranchIcon className="size-3.5" />
+                          <BranchIcon className="size-4" />
                           Branch
                         </button>
                       </div>
+                      {node.relation ? (
+                        <div className="mt-3 border-l-2 border-white/15 pl-3">
+                          <p className="text-[12px] font-medium uppercase tracking-[0.14em] text-neutral-400">
+                            Why it follows
+                          </p>
+                          <p className="mt-1 text-[15px] leading-6 text-neutral-200">
+                            {node.relation}
+                          </p>
+                        </div>
+                      ) : null}
+                      {note && !isPassage ? (
+                        <p className="mt-3 line-clamp-3 text-[14px] leading-6 text-neutral-400">
+                          {note.excerpt}
+                        </p>
+                      ) : null}
+                      {note && isPassage ? (
+                        <TrailStepCard
+                          note={note}
+                          citationIndex={index + 1}
+                          onOpenCitation={onOpenCitation}
+                        />
+                      ) : null}
                     </div>
                   </motion.li>
                 );
@@ -318,6 +349,7 @@ export function TrailDetailDialog({
                 key={trail.id}
                 apiTrailId={apiTrailId}
                 onUploadSource={onUploadSource}
+                onStartNewTrail={onNewQuestion}
                 onContinued={(updated) => {
                   setAppended({ trailId: trail.id, from: trail.nodes.length });
                   onTrailContinued(updated);
@@ -327,17 +359,27 @@ export function TrailDetailDialog({
           </div>
 
           <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-white/[0.07] px-5 py-4 sm:px-7">
+            <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={() => onToggleSave(trail)}
-              className="rounded-xl border border-white/[0.09] bg-white/[0.03] px-3.5 py-2 text-[11.5px] font-medium text-neutral-300 transition hover:border-white/15 hover:bg-white/[0.06] hover:text-white"
+              onClick={() => onNewQuestion()}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-white/[0.09] bg-white/[0.03] px-3.5 py-2 text-[13.5px] font-medium text-neutral-300 transition hover:border-white/15 hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
             >
-              {trail.saved ? "Saved to archive" : "Save this trail"}
+              <SparkIcon className="size-3.5" />
+              New question
             </button>
             <button
               type="button"
+              onClick={() => onToggleSave(trail)}
+              className="rounded-xl border border-white/[0.09] bg-white/[0.03] px-3.5 py-2 text-[13.5px] font-medium text-neutral-300 transition hover:border-white/15 hover:bg-white/[0.06] hover:text-white"
+            >
+              {trail.saved ? "Saved to archive" : "Save this trail"}
+            </button>
+            </div>
+            <button
+              type="button"
               onClick={() => onResume(trail)}
-              className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-[11.5px] font-medium text-neutral-950 transition hover:bg-neutral-200"
+              className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-[13.5px] font-medium text-neutral-950 transition hover:bg-neutral-200"
             >
               {isActive ? "Trail is active" : "Resume trail"}
               <ArrowRightIcon className="size-3.5" />
@@ -362,6 +404,7 @@ export function NoteDetailDrawer({
   onNextNote,
   onTogglePin,
   onBranch,
+  onOpenCitation,
 }: {
   note: Note | null;
   notes: Note[];
@@ -375,6 +418,7 @@ export function NoteDetailDrawer({
   onNextNote: () => void;
   onTogglePin: (note: Note) => void;
   onBranch: (note: Note) => void;
+  onOpenCitation: (note: Note) => void;
 }) {
   const noteMap = new Map(notes.map((item) => [item.id, item]));
   const reduceMotion = useReducedMotion();
@@ -421,10 +465,13 @@ export function NoteDetailDrawer({
           <div className="flex items-start justify-between gap-5 border-b border-white/[0.07] px-5 py-5 sm:px-7 sm:py-6">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded-full border border-white/[0.08] bg-white/[0.03] px-2.5 py-1 font-mono text-[8.5px] uppercase tracking-[0.16em] text-neutral-400">
+                <span className="rounded-full border border-white/[0.08] bg-white/[0.03] px-2.5 py-1 font-mono text-[11px] uppercase tracking-[0.16em] text-neutral-400">
                   {kindLabel(note.kind)}
                 </span>
-                <span className="text-[10.5px] text-neutral-600">{note.tag}</span>
+                <ProvenancePill
+                  provenance={originProvenance(note.sourceOrigin)}
+                />
+                <span className="text-[13px] text-neutral-500">{note.tag}</span>
               </div>
               <h2
                 id="note-title"
@@ -433,7 +480,7 @@ export function NoteDetailDrawer({
                 {note.title}
               </h2>
               {note.source ? (
-                <p className="mt-2 text-[11px] text-neutral-500">{note.source}</p>
+                <p className="mt-2 text-[13px] text-neutral-400">{note.source}</p>
               ) : null}
             </div>
             <button
@@ -459,7 +506,7 @@ export function NoteDetailDrawer({
                     onClick={onPreviousNote}
                     aria-label="Previous note in trail"
                     title="Previous note (← or ↑)"
-                    className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-[10.5px] text-neutral-400 transition hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+                    className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-[13px] text-neutral-400 transition hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
                   >
                     <ArrowLeftIcon className="size-3.5" />
                     <span className="hidden sm:inline">Previous</span>
@@ -468,11 +515,11 @@ export function NoteDetailDrawer({
                   <div className="min-w-0 text-center">
                     <p
                       aria-live="polite"
-                      className="font-mono text-[8.5px] uppercase tracking-[0.16em] text-neutral-500"
+                      className="font-mono text-[11px] uppercase tracking-[0.16em] text-neutral-400"
                     >
                       Note {position.current} of {position.total}
                     </p>
-                    <p className="mt-0.5 max-w-[13rem] truncate text-[10.5px] text-neutral-600">
+                    <p className="mt-0.5 max-w-[13rem] truncate text-[13px] text-neutral-500">
                       {trail.title}
                     </p>
                   </div>
@@ -482,25 +529,25 @@ export function NoteDetailDrawer({
                     onClick={onNextNote}
                     aria-label="Next note in trail"
                     title="Next note (→ or ↓)"
-                    className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-[10.5px] text-neutral-400 transition hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+                    className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-[13px] text-neutral-400 transition hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
                   >
                     <span className="hidden sm:inline">Next</span>
                     <ArrowRightIcon className="size-3.5" />
                   </button>
                 </div>
-                <p className="border-t border-white/[0.055] px-3 py-1.5 text-center text-[10px] text-neutral-600">
+                <p className="border-t border-white/[0.055] px-3 py-1.5 text-center text-[12px] text-neutral-500">
                   Use{" "}
-                  <kbd className="rounded border border-white/[0.09] bg-white/[0.03] px-1 font-mono text-[9px] text-neutral-400">
+                  <kbd className="rounded border border-white/[0.09] bg-white/[0.03] px-1 font-mono text-[11.5px] text-neutral-400">
                     ←
                   </kbd>{" "}
-                  <kbd className="rounded border border-white/[0.09] bg-white/[0.03] px-1 font-mono text-[9px] text-neutral-400">
+                  <kbd className="rounded border border-white/[0.09] bg-white/[0.03] px-1 font-mono text-[11.5px] text-neutral-400">
                     →
                   </kbd>{" "}
                   or{" "}
-                  <kbd className="rounded border border-white/[0.09] bg-white/[0.03] px-1 font-mono text-[9px] text-neutral-400">
+                  <kbd className="rounded border border-white/[0.09] bg-white/[0.03] px-1 font-mono text-[11.5px] text-neutral-400">
                     ↑
                   </kbd>{" "}
-                  <kbd className="rounded border border-white/[0.09] bg-white/[0.03] px-1 font-mono text-[9px] text-neutral-400">
+                  <kbd className="rounded border border-white/[0.09] bg-white/[0.03] px-1 font-mono text-[11.5px] text-neutral-400">
                     ↓
                   </kbd>{" "}
                   to move through this trail
@@ -508,14 +555,24 @@ export function NoteDetailDrawer({
               </div>
             ) : null}
 
-            <p className="text-[13.5px] leading-7 text-neutral-300">{note.body}</p>
+            {chunkIdOf(note) !== null ? (
+              <TrailStepCard
+                key={note.id}
+                note={note}
+                size="md"
+                citationIndex={position?.current}
+                onOpenCitation={onOpenCitation}
+              />
+            ) : (
+              <p className="text-[15.5px] leading-7 text-neutral-300">{note.body}</p>
+            )}
 
             <div className="mt-8 border-t border-white/[0.07] pt-5">
               <div className="flex items-center justify-between gap-3">
-                <p className="font-mono text-[9px] uppercase tracking-[0.22em] text-neutral-500">
+                <p className="font-mono text-[11.5px] uppercase tracking-[0.22em] text-neutral-400">
                   Associations
                 </p>
-                <span className="text-[10px] text-neutral-600">
+                <span className="text-[12px] text-neutral-500">
                   {connected.length} connection{connected.length === 1 ? "" : "s"}
                 </span>
               </div>
@@ -529,14 +586,14 @@ export function NoteDetailDrawer({
                       onClick={() => onOpenNote(other)}
                       className="group flex w-full items-start gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3.5 text-left transition hover:border-white/[0.13] hover:bg-white/[0.04]"
                     >
-                      <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg border border-white/[0.08] bg-white/[0.03] text-neutral-500 transition group-hover:text-white">
+                      <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg border border-white/[0.08] bg-white/[0.03] text-neutral-400 transition group-hover:text-white">
                         <LinkIcon className="size-3.5" />
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[12px] font-medium text-neutral-200">
+                        <span className="block truncate text-[14px] font-medium text-neutral-200">
                           {other.title}
                         </span>
-                        <span className="mt-1 block text-[10.5px] leading-4 text-neutral-500">
+                        <span className="mt-1 block text-[13px] leading-4 text-neutral-400">
                           {association.hint}
                         </span>
                         <span className="mt-2 flex items-center gap-2">
@@ -546,7 +603,7 @@ export function NoteDetailDrawer({
                               style={{ width: `${association.strength}%` }}
                             />
                           </span>
-                          <span className="font-mono text-[9px] text-neutral-600">
+                          <span className="font-mono text-[11.5px] text-neutral-500">
                             {association.strength}%
                           </span>
                         </span>
@@ -556,8 +613,8 @@ export function NoteDetailDrawer({
                 </div>
               ) : (
                 <div className="mt-3 rounded-xl border border-dashed border-white/[0.08] px-4 py-6 text-center">
-                  <SparkIcon className="mx-auto size-4 text-neutral-600" />
-                  <p className="mt-2 text-[11.5px] text-neutral-500">
+                  <SparkIcon className="mx-auto size-4 text-neutral-500" />
+                  <p className="mt-2 text-[13.5px] text-neutral-400">
                     No associations yet. A new connection may appear as your
                     library grows.
                   </p>
@@ -570,7 +627,7 @@ export function NoteDetailDrawer({
             <button
               type="button"
               onClick={() => onTogglePin(note)}
-              className={`inline-flex items-center gap-2 rounded-xl border px-3.5 py-2 text-[11.5px] font-medium transition ${
+              className={`inline-flex items-center gap-2 rounded-xl border px-3.5 py-2 text-[13.5px] font-medium transition ${
                 note.pinned
                   ? "border-white/20 bg-white/[0.08] text-white"
                   : "border-white/[0.09] bg-white/[0.03] text-neutral-300 hover:border-white/15 hover:bg-white/[0.06]"
@@ -582,7 +639,7 @@ export function NoteDetailDrawer({
             <button
               type="button"
               onClick={() => onBranch(note)}
-              className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-[11.5px] font-medium text-neutral-950 transition hover:bg-neutral-200"
+              className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-[13.5px] font-medium text-neutral-950 transition hover:bg-neutral-200"
             >
               <BranchIcon className="size-3.5" />
               Branch from here

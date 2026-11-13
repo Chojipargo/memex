@@ -387,11 +387,11 @@ export function DocumentUploader({
         <div className="mb-1.5 flex items-baseline justify-between gap-3">
           <label
             htmlFor="document-title"
-            className="text-[12.5px] font-medium tracking-[-0.005em] text-neutral-300"
+            className="text-[14.5px] font-medium tracking-[-0.005em] text-neutral-300"
           >
             Title
           </label>
-          <span className="text-[11px] text-neutral-500">Optional</span>
+          <span className="text-[13px] text-neutral-400">Optional</span>
         </div>
         <input
           id="document-title"
@@ -454,10 +454,10 @@ export function DocumentUploader({
         </span>
 
         <span className="space-y-1.5">
-          <span className="block text-[14px] font-medium tracking-[-0.01em] text-white">
+          <span className="block text-[16px] font-medium tracking-[-0.01em] text-white">
             {busy ? "Processing your document" : "Drop a document here"}
           </span>
-          <span className="block text-[12.5px] text-mist-dim">
+          <span className="block text-[14.5px] text-mist-dim">
             {busy ? (
               "Extracting, chunking and embedding"
             ) : (
@@ -473,7 +473,7 @@ export function DocumentUploader({
 
         <span
           id="document-upload-hint"
-          className="flex items-center gap-1.5 text-center font-mono text-[10px] uppercase tracking-[0.16em] text-neutral-500"
+          className="flex items-center gap-1.5 text-center font-mono text-[12px] uppercase tracking-[0.16em] text-neutral-400"
         >
           <FileTextIcon className="size-3.5" />
           PDF, PNG, JPG, WebP, BMP · up to {DOCUMENT_MAX_LABEL}
@@ -487,11 +487,11 @@ export function DocumentUploader({
               <Spinner className="shrink-0 text-neutral-300" />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center justify-between gap-3">
-                  <span className="truncate text-[12.5px] text-mist">
+                  <span className="truncate text-[14.5px] text-mist">
                     {state.progress.label}
                   </span>
                   {state.progress.pages > 0 ? (
-                    <span className="shrink-0 font-mono text-[10px] text-neutral-500">
+                    <span className="shrink-0 font-mono text-[12px] text-neutral-400">
                       {state.progress.page} / {state.progress.pages}
                     </span>
                   ) : null}
@@ -520,15 +520,15 @@ export function DocumentUploader({
               <CheckIcon className="size-4" />
             </span>
             <div className="min-w-0">
-              <p className="truncate text-[13px] font-medium text-white">
+              <p className="truncate text-[15px] font-medium text-white">
                 {state.document.title}
               </p>
-              <p className="mt-1 text-[12px] leading-5 text-mist">
+              <p className="mt-1 text-[14px] leading-5 text-mist">
                 {friendlyMethod(state.document.extractionMethod)} ·{" "}
                 {state.document.chunks.toLocaleString("en-US")} chunks ·{" "}
                 {state.document.tokens.toLocaleString("en-US")} tokens
               </p>
-              <p className="mt-1 text-[11.5px] leading-5 text-neutral-500">
+              <p className="mt-1 text-[13.5px] leading-5 text-neutral-400">
                 {targetTrailId
                   ? "Added to your active trail and searchable now."
                   : "A new trail was opened and is searchable now."}
@@ -536,7 +536,7 @@ export function DocumentUploader({
               <button
                 type="button"
                 onClick={reset}
-                className="mt-2 text-[12px] font-medium text-neutral-300 underline decoration-white/20 underline-offset-4 transition hover:text-white"
+                className="mt-2 text-[14px] font-medium text-neutral-300 underline decoration-white/20 underline-offset-4 transition hover:text-white"
               >
                 Upload another
               </button>
@@ -551,11 +551,11 @@ export function DocumentUploader({
           >
             <AlertIcon className="mt-0.5 size-4 shrink-0" />
             <div>
-              <p className="text-[12.5px] leading-5">{state.message}</p>
+              <p className="text-[14.5px] leading-5">{state.message}</p>
               <button
                 type="button"
                 onClick={reset}
-                className="mt-1.5 text-[12px] font-medium text-red-100 underline decoration-red-200/30 underline-offset-4 transition hover:text-white"
+                className="mt-1.5 text-[14px] font-medium text-red-100 underline decoration-red-200/30 underline-offset-4 transition hover:text-white"
               >
                 Try again
               </button>

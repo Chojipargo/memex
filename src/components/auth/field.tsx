@@ -44,7 +44,7 @@ export function Field({
       <div className="mb-1.5 flex items-center justify-between gap-3">
         <label
           htmlFor={id}
-          className="text-[12.5px] font-medium tracking-[-0.005em] text-neutral-300"
+          className="text-[14.5px] font-medium tracking-[-0.005em] text-neutral-300"
         >
           {label}
         </label>
@@ -53,7 +53,7 @@ export function Field({
 
       <div className="relative">
         {icon ? (
-          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500">
+          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400">
             {icon}
           </span>
         ) : null}
@@ -82,12 +82,12 @@ export function Field({
       {error ? (
         <p
           id={`${id}-error`}
-          className="mt-1.5 text-[12px] leading-4 text-red-300/90"
+          className="mt-1.5 text-[14px] leading-4 text-red-300/90"
         >
           {error}
         </p>
       ) : hint ? (
-        <p id={`${id}-hint`} className="mt-1.5 text-[12px] leading-4 text-neutral-500">
+        <p id={`${id}-hint`} className="mt-1.5 text-[14px] leading-4 text-neutral-400">
           {hint}
         </p>
       ) : null}

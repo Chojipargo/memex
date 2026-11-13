@@ -21,7 +21,7 @@ create table if not exists public.trails (
 comment on table public.trails is
   'One row per generated trail. question is the user prompt that produced the ordered path.';
 comment on column public.trails.model is
-  'Gemini model id used to generate the trail, recorded for reproducibility.';
+  'Claude model id used to generate the trail, recorded for reproducibility.';
 
 create index if not exists trails_user_created_idx
   on public.trails (user_id, created_at desc);

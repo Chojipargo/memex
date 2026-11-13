@@ -31,8 +31,8 @@ export function BrandMark({ className = "" }: { className?: string }) {
           />
         </svg>
       </span>
-      <span className="text-[17px] font-semibold tracking-[-0.03em] text-white">
-        memex<span className="text-neutral-500">.ai</span>
+      <span className="text-[19px] font-semibold tracking-[-0.03em] text-white">
+        memex<span className="text-neutral-400">.ai</span>
       </span>
     </div>
   );
